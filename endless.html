@@ -60,7 +60,7 @@ addEventListener('resize',fit);fit();
 const idx=(x,y)=>y*W+x,cx=c=>c%W,cy=c=>(c/W)|0,R=(a,b)=>a+Math.random()*(b-a);
 const hsl=(p,l,a=1)=>`hsla(${p.hue},${p.sat}%,${l}%,${a})`;
 const A=['ממלכת','שבט','מסדר','בית','אימפריית','נסיכות'],B=['הדרקון','הזאב','הנשר','היער','הברק','הלהבה','הסערה','הירח','השמש','ההר','הים','הקרח','האלון','העוגן','הכתר','הנחש','הדוב','השועל'];
-let water=new Uint8Array(1),owner,trail,wall,capT,things=[],players=[],parts=[],texts=[],time=0,running=false,shake=0,counts=new Int32Array(128),cam={x:W/2,y:H/2};
+let teamN={},water=new Uint8Array(1),owner,trail,wall,capT,things=[],players=[],parts=[],texts=[],time=0,running=false,shake=0,counts=new Int32Array(128),cam={x:W/2,y:H/2};
 const me=()=>players[0],foe=(a,b)=>a.team!==b.team;
 let ac;function beep(f,d=.08,type='square',v=.04,delay=0){try{ac=ac||new AudioContext();const t=ac.currentTime+delay,o=ac.createOscillator(),g=ac.createGain();o.type=type;o.frequency.setValueAtTime(f,t);g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.0001,t+d);o.connect(g).connect(ac.destination);o.start(t);o.stop(t+d)}catch(e){}}
 function toast(t){const e=document.getElementById('toast');e.textContent=t;e.style.opacity=1;clearTimeout(toast.h);toast.h=setTimeout(()=>e.style.opacity=0,1600)}
@@ -114,6 +114,9 @@ function planLoop(p){const h=nearestOwn(p),home={x:cx(h)+.5,y:cy(h)+.5};
   if(p.team===1){// my allies push into the closest enemy kingdom
     const t=things.filter(t=>t.kind==='home'&&players[t.homeOf-1].team!==1&&Math.abs(t.x-p.x)+Math.abs(t.y-p.y)<40).sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y))[0];
     if(t&&Math.random()<.5){loopAround(p,t.x+.5,t.y+.5,3.5,home);return}}
+  else{const mine=counts[p.team]||1;// enemies also know a castle is the big prize, but only pick fights they can win
+    const t=things.filter(t=>t.kind==='home'&&players[t.homeOf-1].team!==p.team&&t.homeOf!==1&&Math.abs(t.x-p.x)+Math.abs(t.y-p.y)<24&&(counts[players[t.homeOf-1].team]||1)<mine*1.1).sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y))[0];
+    if(t&&Math.random()<.35){loopAround(p,t.x+.5,t.y+.5,3.5,home);return}}
   const tg=things.filter(t=>t.kind!=='home'&&t.own!==p.team&&Math.abs(t.x-p.x)+Math.abs(t.y-p.y)<(t.kind==='tower'?26:16)).sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y))[0];
   if(tg&&Math.random()<.5){loopAround(p,tg.x+.5,tg.y+.5,2,home);return}
   const d=[[1,0],[-1,0],[0,1],[0,-1]][(Math.random()*4)|0],s=Math.random()<.5?1:-1,q=[-d[1]*s,d[0]*s],L=R(4,10)*p.skill,Wd=R(3,7)*p.skill;
@@ -127,8 +130,11 @@ function botThink(p,dt){p.think-=dt;
       for(const c of p.tl){const d=Math.hypot(cx(c)+.5-o.x,cy(c)+.5-o.y);if(d<danger)danger=d}
       if(o.tl.length){const his=homeDist(o);for(let i=0;i<o.tl.length;i+=2){const c=o.tl[i],x=cx(c)+.5,y=cy(c)+.5,d=Math.hypot(x-p.x,y-p.y),margin=his-d*1.05;
         if(margin>1.5&&d<14){const gain=o.tl.length+margin*2-d;if(gain>bestGain){bestGain=gain;best={x,y}}}}}}
-    const h=nearestOwn(p),home={x:cx(h)+.5,y:cy(h)+.5};
-    if(p.tl.length&&danger<myHome+2)p.wp=[home];
+    const h=nearestOwn(p),home={x:cx(h)+.5,y:cy(h)+.5};let guard=null,gd=1e9;
+    for(const o of players){if(!foe(o,p)||!o.alive||!o.tl.length)continue;const his=homeDist(o);
+      for(const c of o.tl){const x=cx(c)+.5,y=cy(c)+.5;if(Math.abs(x-p.hx)>10||Math.abs(y-p.hy)>10)continue;const d=Math.hypot(x-p.x,y-p.y);if(d<gd&&d<his+3){gd=d;guard={x,y}}}}
+    if(guard&&(!p.tl.length||danger>myHome+3)){p.wp=[guard];p.def=1}// defend the castle first
+    else if(p.tl.length&&danger<myHome+2)p.wp=[home];
     else if(best&&(!p.tl.length||danger>myHome+6))p.wp=[best];
     else if(p.tl.length>(14+Math.min(danger,30))*p.skill)p.wp=[home]}
   if(!p.wp.length)planLoop(p);const w=p.wp[0];if(!w)return;const x=w.x-p.x,y=w.y-p.y,l=Math.hypot(x,y);
@@ -175,7 +181,7 @@ function spawnAround(){const m=me();let foes=0;for(const t of things)if(t.kind==
 // ---------- update ----------
 let cntT=0;
 function update(dt){time+=dt;
-  cntT-=dt;if(cntT<=0){cntT=.5;counts.fill(0);for(let c=0;c<N;c++)if(owner[c])counts[owner[c]]++;const L=myLevel();if(L>lastLvl){lastLvl=L;toast('💪 רמה '+L+': אתה מהיר וחזק יותר!');beep(880,.2,'triangle',.06)}}
+  cntT-=dt;if(cntT<=0){cntT=.5;counts.fill(0);for(let c=0;c<N;c++)if(owner[c])counts[owner[c]]++;teamN={};for(const q of players)teamN[q.team]=(teamN[q.team]||0)+1;const L=myLevel();if(L>lastLvl){lastLvl=L;toast('💪 רמה '+L+': אתה מהיר וחזק יותר!');beep(880,.2,'triangle',.06)}}
   spawnT-=dt;if(spawnT<=0){spawnT=6;spawnAround()}
   const m=me();
   for(const p of players){
@@ -215,7 +221,7 @@ function draw(){const m=me(),tx=m.alive?m.x:m.hx+.5,ty=m.alive?m.y:m.hy+.5;cam.x
     if(t.kind==='tower'){ctx.fillStyle='#9a958c';ctx.fillRect(-5,-14,10,23);ctx.fillStyle='#b8b3a8';ctx.fillRect(-7,-17,14,5);ctx.fillRect(-7,-20,3,3);ctx.fillRect(-1.5,-20,3,3);ctx.fillRect(4,-20,3,3);ctx.fillStyle='#5b4632';rr(-2,2,4,7,2);ctx.fill();
       ctx.fillStyle=p?hsl(p,50):'#ddd';ctx.fillRect(-1,-30,2,11);ctx.beginPath();ctx.moveTo(1,-30);ctx.lineTo(9,-27);ctx.lineTo(1,-24);ctx.fill();
       if(!t.own){ctx.strokeStyle=`rgba(255,224,102,${.5+.5*Math.sin(time*5)})`;ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,-4,16,0,7);ctx.stroke()}}
-    else if(home){ctx.fillStyle='#efe4c8';ctx.fillRect(-9,-4,18,13);ctx.fillRect(-11,-9,6,18);ctx.fillRect(5,-9,6,18);ctx.fillStyle=p?hsl(p,45):'#777';ctx.beginPath();ctx.moveTo(-12,-9);ctx.lineTo(-8,-15);ctx.lineTo(-4,-9);ctx.moveTo(4,-9);ctx.lineTo(8,-15);ctx.lineTo(12,-9);ctx.moveTo(-3,-9);ctx.lineTo(0,-18);ctx.lineTo(3,-9);ctx.fill();ctx.fillStyle='#5b4632';rr(-3,2,6,7,3);ctx.fill()}
+    else if(home){if(p&&players[t.homeOf-1].team===players[t.homeOf-1].id||t.homeOf===1){const n=teamN[p.team]||1;ctx.font='900 9px system-ui';ctx.textAlign='center';ctx.lineWidth=3;ctx.strokeStyle='rgba(0,0,0,.65)';const lb='👑'+n;ctx.strokeText(lb,0,-21);ctx.fillStyle='#fff';ctx.fillText(lb,0,-21)}ctx.fillStyle='#efe4c8';ctx.fillRect(-9,-4,18,13);ctx.fillRect(-11,-9,6,18);ctx.fillRect(5,-9,6,18);ctx.fillStyle=p?hsl(p,45):'#777';ctx.beginPath();ctx.moveTo(-12,-9);ctx.lineTo(-8,-15);ctx.lineTo(-4,-9);ctx.moveTo(4,-9);ctx.lineTo(8,-15);ctx.lineTo(12,-9);ctx.moveTo(-3,-9);ctx.lineTo(0,-18);ctx.lineTo(3,-9);ctx.fill();ctx.fillStyle='#5b4632';rr(-3,2,6,7,3);ctx.fill()}
     else{ctx.fillStyle='#f3e6c8';ctx.fillRect(-6,-2,12,10);ctx.fillStyle=p?hsl(p,48):'#a0522d';ctx.beginPath();ctx.moveTo(-8,-1);ctx.lineTo(0,-9);ctx.lineTo(8,-1);ctx.fill();ctx.fillStyle='#6b4a2b';ctx.fillRect(-2,3,4,5)}ctx.restore()}
   for(const p of players){if(!p.alive||!inV(p.x,p.y))continue;const X=p.x*CS,Y=p.y*CS,b=Math.sin(p.bob),hop=Math.abs(b)*3;ctx.fillStyle='rgba(0,0,0,.25)';ctx.beginPath();ctx.ellipse(X,Y+8,8,3,0,0,7);ctx.fill();ctx.save();ctx.translate(X,Y-hop);ctx.scale(p.face,1);
     ctx.fillStyle='#555';ctx.fillRect(-4,5+b*2,3,5);ctx.fillRect(1,5-b*2,3,5);ctx.fillStyle=hsl(p,52);ctx.beginPath();ctx.arc(0,1,8,0,7);ctx.fill();ctx.fillStyle='#c8ccd3';ctx.beginPath();ctx.arc(0,-6,7,Math.PI,0);ctx.lineTo(7,-3);ctx.lineTo(-7,-3);ctx.fill();ctx.fillStyle='#2b2d33';ctx.fillRect(1,-6,6,2);ctx.fillStyle=hsl(p,55);ctx.beginPath();ctx.ellipse(-3,-14,5,2.5,-.5,0,7);ctx.fill();
