@@ -1,0 +1,670 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="חומות">
+<title>חומות</title>
+<style>
+html,body{margin:0;height:100%;background:#3f7a33;overflow:hidden;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;user-select:none}
+canvas{display:block;margin:0 auto;touch-action:none;border-radius:14px;box-shadow:0 8px 40px rgba(0,0,0,.35)}
+.panel{position:fixed;top:10px;background:rgba(30,20,5,.55);color:#fff;padding:8px 12px;border-radius:12px;font-size:14px;min-width:160px;pointer-events:none;line-height:1.6}
+@media (max-width:700px),(orientation:portrait){#lb{display:none}#me{font-size:12px!important;min-width:0;padding:6px 9px}#timer{font-size:15px;padding:4px 12px}.card{padding:18px 16px!important;max-height:88vh;overflow:auto}.card h1{font-size:34px!important}.card p{font-size:15px!important}html,body{overscroll-behavior:none;touch-action:none}}
+#lb{left:10px}#me{right:10px;font-size:16px;font-weight:700}
+#timer{position:fixed;top:10px;left:50%;transform:translateX(-50%);background:rgba(30,20,5,.55);color:#fff;padding:6px 18px;border-radius:20px;font-size:20px;font-weight:800;pointer-events:none}
+.overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(20,30,10,.55)}
+.card{background:#fff6dc;border-radius:22px;padding:26px 34px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.4);max-width:88vw;color:#3b2a10;animation:pop .35s cubic-bezier(.2,1.6,.4,1)}
+.card h1{margin:0 0 8px;font-size:44px}.card p{font-size:18px;line-height:1.6;margin:8px 0}
+@keyframes pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
+button{font:inherit;font-size:20px;font-weight:700;padding:12px 28px;border:none;border-radius:14px;background:#e8a317;color:#3b2500;cursor:pointer;box-shadow:0 4px 0 #a36f00;margin:6px}
+button:active{transform:translateY(3px);box-shadow:0 1px 0 #a36f00}
+button.alt{background:#4fb35a;color:#fff;box-shadow:0 4px 0 #2a7a33}
+.hidden{display:none}
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:10px 18px;border-radius:12px;opacity:0;transition:opacity .3s}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="panel hidden" id="lb"></div>
+<div id="timer" class="hidden"></div>
+<div class="panel hidden" id="me"></div>
+
+<div class="overlay" id="start"><div class="card">
+  <h1>🏰 חומות</h1>
+  <p>🏃 צא מהשטח שלך, ומאחוריך נבנית גדר.<br>
+  🏠 חזור הביתה, והכל בפנים נכבש. הגדר הופכת לחומת אבן!<br>
+  ⚠️ אם מישהו נוגע לך בגדר, נפלת.<br>
+  🔨 חומה של אויב? רוץ לתוכה ותשבור אותה.<br>
+  👑 הקף טירה של אויב, והממלכה שלו מצטרפת אליך!</p>
+  <p style="opacity:.75">עכבר / אצבע / חיצים לתנועה · רווח = דהירה</p>
+  <p id="lvlInfo" style="background:#3b2a10;color:#fff;border-radius:12px;padding:8px 12px"></p>
+  <button id="go">יאללה לכבוש! ⚔️</button>
+  <button class="alt" id="insane" style="background:#2a0a0a;color:#ff4d4d;box-shadow:0 4px 0 #000">😱 צלם מהלך מטורף (סרטון לטיקטוק)</button>
+  <button class="alt" id="film">🎬 מצב צילום (המשחק משחק לבד ומצלם רגעים)</button>
+</div></div>
+
+<div class="overlay hidden" id="dead"><div class="card">
+  <h1>💥</h1>
+  <p id="deadTxt" style="font-size:22px;font-weight:800"></p>
+  <p>חוזר לטירה שלך בעוד רגע...</p>
+  <button class="alt" id="revenge">📲 קרא לחבר לנקום</button>
+</div></div>
+
+<div class="overlay hidden" id="end"><div class="card">
+  <h1 id="endTitle">👑</h1>
+  <p id="endTxt" style="font-size:22px;font-weight:800"></p>
+  <div id="clips" style="margin:10px 0"></div>
+  <button id="again">עוד משחק!</button>
+  <button class="alt" id="share">📲 שתף</button>
+</div></div>
+<div id="toast"></div>
+
+<script>
+const W=64,H=44,CS=16,N=W*H,WALLHP=4,SPEED=6.5,ROUND=300;
+const SS=new URLSearchParams(location.search).has('hq')?3:1;
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+cv.width=W*CS*SS;cv.height=H*CS*SS;
+let mobileCam=false,camS=1;
+function fit(){if(innerHeight>innerWidth*1.1){mobileCam=true;camS=innerHeight/cv.height;cv.style.width=cv.width*camS+'px';cv.style.height=innerHeight+'px';cv.style.marginTop='0';cv.style.borderRadius='0';cv.style.position='fixed';cv.style.top='0';cv.style.left='0';return}mobileCam=false;cv.style.position='';cv.style.transform='';const s=Math.min((innerWidth-16)/cv.width,(innerHeight-16)/cv.height);cv.style.width=cv.width*s+'px';cv.style.height=cv.height*s+'px';cv.style.marginTop=(innerHeight-cv.height*s)/2+'px'}
+addEventListener('resize',fit);fit();
+let camX=0;function followCam(){if(!mobileCam||!players.length)return;const m=me(),px=(m.alive?m.x:m.hx+.5)*CS*SS*camS,target=Math.max(innerWidth-cv.width*camS,Math.min(0,innerWidth/2-px));camX+=(target-camX)*.15;cv.style.transform=`translateX(${camX}px)`}
+
+const CFG=[['אתה',210,80],['סר דני',2,75],['ליידי נועה',130,55],['אביר משה',40,95],['סר יוסי',285,60],['גברת מאיה',175,70]];
+const HOMES=[[6,6],[W-7,H-7],[W-7,6],[6,H-7],[W>>1,5],[W>>1,H-6]];
+let capT=new Float32Array(64*44).fill(-99);
+let owner,trail,wall,things,players=[],parts=[],texts=[],shake=0,time=0,left=ROUND,running=false;
+const idx=(x,y)=>y*W+x, cx=c=>c%W, cy=c=>(c/W)|0;
+const R=(a,b)=>a+Math.random()*(b-a);
+const hsl=(p,l,a=1)=>`hsla(${p.hue},${p.sat}%,${l}%,${a})`;
+const me=()=>players[0];
+const foe=(a,b)=>a.team!==b.team;
+const lords=()=>players.filter(p=>!p.out&&p.team===p.id);
+
+// ---------- sound ----------
+let ac;
+function beep(f,d=.08,type='square',v=.04,delay=0){try{ac=ac||new AudioContext();const t=ac.currentTime+delay,o=ac.createOscillator(),g=ac.createGain();o.type=type;o.frequency.setValueAtTime(f,t);g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.0001,t+d);o.connect(g).connect(ac.destination);o.start(t);o.stop(t+d)}catch(e){}}
+
+// ---------- background ----------
+const bg=document.createElement('canvas');bg.width=cv.width;bg.height=cv.height;
+(function(){const b=bg.getContext('2d');b.scale(SS,SS);for(let y=0;y<H;y++)for(let x=0;x<W;x++){b.fillStyle=(x+y)%2?'#86c95f':'#7fc258';b.fillRect(x*CS,y*CS,CS,CS)}
+for(let i=0;i<500;i++){const x=R(0,bg.width),y=R(0,bg.height);b.strokeStyle='rgba(40,110,30,.45)';b.lineWidth=1.3;b.beginPath();b.moveTo(x,y);b.lineTo(x-2,y-4);b.moveTo(x,y);b.lineTo(x+2,y-4);b.stroke()}
+for(let i=0;i<40;i++){const x=R(0,bg.width),y=R(0,bg.height);b.fillStyle=['#fff','#ffd84a','#ff8fb0'][i%3];b.beginPath();b.arc(x,y,2,0,7);b.fill()}})();
+
+// ---------- setup ----------
+function claimHome(p){for(let j=-1;j<=1;j++)for(let i=-1;i<=1;i++){const c=idx(p.hx+i,p.hy+j);owner[c]=p.team;wall[c]=0}}
+const LEVELS=[{bots:2,goal:25,t:180,name:'הכפר'},{bots:3,goal:35,t:180,name:'העיר'},{bots:4,goal:45,t:240,name:'המחוז'},{bots:5,goal:55,t:240,name:'הממלכה'},{bots:5,goal:70,t:300,name:'העולם'}];
+let lvl=0;try{lvl=Math.min(LEVELS.length-1,+localStorage.getItem('walls_lvl')||0)}catch(e){}
+const L=()=>LEVELS[lvl];let goalT=0;
+function showLevel(){const el=document.getElementById('lvlInfo');if(el)el.innerHTML=`<b>שלב ${lvl+1} מתוך ${LEVELS.length}: ${L().name}</b><br>כבוש ${L().goal}% מהמפה, מול ${L().bots} אבירים`}
+function init(){
+  owner=new Int8Array(N);trail=new Int8Array(N);wall=new Int8Array(N);capT=new Float32Array(N).fill(-99);
+  things=[];
+  const homes=[...HOMES].sort(()=>Math.random()-.5);
+  players=CFG.map((c,i)=>({id:i+1,team:i+1,name:c[0],hue:c[1],sat:c[2],bot:i>0,x:0,y:0,dx:1,dy:0,tl:[],alive:true,out:false,respawn:0,dash:0,dashCd:0,brk:0,wp:[],bob:0,face:1,think:0,hx:homes[i][0],hy:homes[i][1]}));
+  for(const p of players){things.push({x:p.hx,y:p.hy,kind:'home',homeOf:p.id,own:p.team,pop:0});claimHome(p);p.x=p.hx+.5;p.y=p.hy+.5}
+  things.push({x:W>>1,y:H>>1,big:true,own:0,pop:0});
+  for(let t=0;t<2000&&things.length<20;t++){const x=3+((Math.random()*(W-6))|0),y=3+((Math.random()*(H-6))|0);if(things.every(o=>Math.hypot(o.x-x,o.y-y)>6))things.push({x,y,big:false,own:0,pop:0})}
+  for(let k=L().bots+1;k<players.length;k++){const p=players[k];p.out=true;p.alive=false;for(let c=0;c<N;c++)if(owner[c]===p.team){owner[c]=0;wall[c]=0}}
+  parts=[];texts=[];left=songMode?ROUND:L().t;goalT=0;
+}
+function respawn(p){
+  claimHome(p);
+  p.x=p.hx+.5;p.y=p.hy+.5;p.alive=true;p.tl=[];p.wp=[];p.dash=0;p.brk=0;
+  for(let i=0;i<14;i++)parts.push({x:p.x,y:p.y,vx:R(-4,4),vy:R(-4,4),life:.6,max:.6,col:hsl(p,60),s:R(2,4),g:0});
+  if(!p.bot)document.getElementById('dead').classList.add('hidden');
+}
+
+// ---------- input ----------
+let mouse=null,keys={},kb=false;
+let touchO=null;
+cv.addEventListener('pointerdown',e=>{if(e.pointerType!=='mouse')touchO={x:e.clientX,y:e.clientY}});addEventListener('pointerup',()=>{touchO=null});
+function setMouse(e){if(e.pointerType!=='mouse'&&touchO&&players.length){const dx=e.clientX-touchO.x,dy=e.clientY-touchO.y;if(Math.hypot(dx,dy)>8){const m=me(),l=Math.hypot(dx,dy);mouse={x:m.x+dx/l*20,y:m.y+dy/l*20};kb=false}return}const r=cv.getBoundingClientRect();mouse={x:(e.clientX-r.left)/r.width*W,y:(e.clientY-r.top)/r.height*H};kb=false}
+cv.addEventListener('pointermove',setMouse);
+cv.addEventListener('pointerdown',setMouse);
+const KM={ArrowLeft:'l',KeyA:'l',ArrowRight:'r',KeyD:'r',ArrowUp:'u',KeyW:'u',ArrowDown:'d',KeyS:'d'};
+addEventListener('keydown',e=>{if(KM[e.code]){keys[KM[e.code]]=1;kb=true;e.preventDefault()}if(e.code==='Space'){doDash(me());e.preventDefault()}if(e.code==='Enter'&&!running&&!document.getElementById('start').classList.contains('hidden'))start()});
+addEventListener('keyup',e=>{if(KM[e.code])keys[KM[e.code]]=0});
+cv.addEventListener('dblclick',()=>doDash(me()));
+function humanDir(p){
+  if(kb){const x=(keys.r|0)-(keys.l|0),y=(keys.d|0)-(keys.u|0);if(x||y){const l=Math.hypot(x,y);p.dx=x/l;p.dy=y/l}}
+  else if(mouse){const x=mouse.x-p.x,y=mouse.y-p.y,l=Math.hypot(x,y);if(l>.35){p.dx=x/l;p.dy=y/l}}
+}
+function doDash(p){if(!p||!p.alive||p.dashCd>0||!running)return;p.dash=.35;p.dashCd=3;if(!p.bot)beep(300,.15,'sawtooth',.03);
+  for(let i=0;i<10;i++)parts.push({x:p.x,y:p.y,vx:-p.dx*R(3,7)+R(-2,2),vy:-p.dy*R(3,7)+R(-2,2),life:.4,max:.4,col:'rgba(255,255,255,.8)',s:R(2,4),g:0})}
+
+// ---------- bots ----------
+function nearestOwn(p){let best=null,bd=1e9;for(let c=0;c<N;c++)if(owner[c]===p.team){const d=(cx(c)+.5-p.x)**2+(cy(c)+.5-p.y)**2;if(d<bd){bd=d;best=c}}return best}
+const clampPt=(x,y)=>({x:Math.max(1.5,Math.min(W-1.5,x)),y:Math.max(1.5,Math.min(H-1.5,y))});
+function loopAround(p,tx,ty,r,home){if(window.__bold&&p.id===1)r=r*(2+Math.random()*2.5);p.wp=[clampPt(tx-r,ty-r),clampPt(tx+r,ty-r),clampPt(tx+r,ty+r),clampPt(tx-r,ty+r),clampPt(tx-r,ty-r),home]}
+function planLoop(p){
+  const h=nearestOwn(p);if(h==null)return;
+  const home={x:cx(h)+.5,y:cy(h)+.5};
+  if(time>40&&Math.random()<.2){const t=things.filter(t=>t.kind==='home'&&!players[t.homeOf-1].out&&players[t.homeOf-1].team!==p.team&&(players[t.homeOf-1].bot||time>70)).sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y))[0];
+    if(t&&Math.hypot(t.x-p.x,t.y-p.y)<20){loopAround(p,t.x+.5,t.y+.5,3,home);return}}
+  const target=things.filter(t=>t.kind!=='home'&&t.own!==p.team).sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y))[0];
+  if(target&&Math.random()<.45&&Math.hypot(target.x-p.x,target.y-p.y)<14){loopAround(p,target.x+.5,target.y+.5,target.big?3:2,home);return}
+  const dirs=[[1,0],[-1,0],[0,1],[0,-1]],d=dirs[(Math.random()*4)|0],s=Math.random()<.5?1:-1,q=[-d[1]*s,d[0]*s];
+  const L=R(4,11),Wd=R(3,8);
+  p.wp=[clampPt(p.x+d[0]*L,p.y+d[1]*L),clampPt(p.x+d[0]*L+q[0]*Wd,p.y+d[1]*L+q[1]*Wd),clampPt(p.x+q[0]*Wd,p.y+q[1]*Wd),home];
+}
+function botThink(p,dt){
+  if(p.scripted){const w=p.wp[0];if(!w)return;const x=w.x-p.x,y=w.y-p.y,l=Math.hypot(x,y);if(l<.4){p.wp.shift();return}p.dx=x/l;p.dy=y/l;return}
+  p.think-=dt;
+  if(p.think<=0){p.think=.3;
+    for(const o of players){if(!foe(o,p)||!o.alive||!o.tl.length)continue;
+      for(const c of o.tl){const d=Math.hypot(cx(c)+.5-p.x,cy(c)+.5-p.y);if(d<5&&Math.random()<.35){p.wp=[{x:cx(c)+.5,y:cy(c)+.5}];break}}}
+    if(p.tl.length>34){const h=nearestOwn(p);if(h!=null)p.wp=[{x:cx(h)+.5,y:cy(h)+.5}]}
+  }
+  if(!p.wp.length)planLoop(p);
+  const w=p.wp[0];if(!w)return;
+  const x=w.x-p.x,y=w.y-p.y,l=Math.hypot(x,y);
+  if(l<.5){p.wp.shift();return}
+  p.dx+=(x/l-p.dx)*.3;p.dy+=(y/l-p.dy)*.3;const m=Math.hypot(p.dx,p.dy)||1;p.dx/=m;p.dy/=m;
+  if(p.tl.length>12&&Math.random()<dt*.3)doDash(p);
+}
+
+// ---------- rules ----------
+function enterCell(p,c){
+  const t=trail[c];
+  if(t&&foe(players[t-1],p))kill(players[t-1],p);
+  if(owner[c]===p.team){if(p.tl.length)capture(p)}
+  else if(!trail[c]){trail[c]=p.id;p.tl.push(c)}
+}
+function capture(p){
+  const chased=p.id===1&&players.some(q=>foe(q,p)&&q.alive&&Math.hypot(q.x-p.x,q.y-p.y)<(autoFilm?6:3.5));
+  let gained=0,sx=0,sy=0;
+  for(const c of p.tl){trail[c]=0;if(owner[c]!==p.team)gained++;owner[c]=p.team;wall[c]=WALLHP;sx+=cx(c);sy+=cy(c)}
+  const n0=p.tl.length;p.tl=[];
+  const seen=new Uint8Array(N),st=[];
+  const push=c=>{if(!seen[c]&&owner[c]!==p.team){seen[c]=1;st.push(c)}};
+  for(let x=0;x<W;x++){push(idx(x,0));push(idx(x,H-1))}
+  for(let y=0;y<H;y++){push(idx(0,y));push(idx(W-1,y))}
+  while(st.length){const c=st.pop(),x=cx(c),y=cy(c);if(x>0)push(c-1);if(x<W-1)push(c+1);if(y>0)push(c-W);if(y<H-1)push(c+W)}
+  const fx=[];
+  for(let c=0;c<N;c++)if(!seen[c]&&owner[c]!==p.team){
+    if(trail[c]&&foe(players[trail[c]-1],p))kill(players[trail[c]-1],p);
+    owner[c]=p.team;wall[c]=0;gained++;if(Math.random()<.25)fx.push(c);if(p.id===1)capT[c]=time+Math.hypot(cx(c)-p.x,cy(c)-p.y)*.03;
+  }
+  // walls stay only on a kingdom's outer edge
+  for(let c=0;c<N;c++){if(!wall[c])continue;const o=owner[c],x=cx(c),y=cy(c);if(!o){wall[c]=0;continue}
+    if((x===0||owner[c-1]===o)&&(x===W-1||owner[c+1]===o)&&(y===0||owner[c-W]===o)&&(y===H-1||owner[c+W]===o))wall[c]=0}
+  const mx=n0?sx/n0+.5:p.x,my=n0?sy/n0+.5:p.y;
+  for(const c of fx.slice(0,60))parts.push({x:cx(c)+.5,y:cy(c)+.5,vx:R(-2,2),vy:R(-5,-1),life:.8,max:.8,col:hsl(p,R(55,75)),s:R(2,5),g:6});
+  for(let i=0;i<24;i++)parts.push({x:mx,y:my,vx:R(-7,7),vy:R(-9,-2),life:1,max:1,col:`hsl(${R(0,360)},90%,60%)`,s:R(2,4),g:14,conf:1});
+  texts.push({x:mx,y:my,t:'+'+gained,life:1.2,col:hsl(p,40),big:gained>40});
+  if(p.id===1){window.__lastGain=gained;if(chased&&n0>4)highlight('escape');else if(gained>=(autoFilm?35:80))highlight('bigloop')}
+  if(p.team===1){shake=Math.min(10,3+gained/15);[523,659,784,1046].forEach((f,i)=>beep(f,.12,'triangle',.05,i*.06))}
+}
+function kill(v,k){
+  if(!v.alive)return;
+  window.__lastTrail=v.tl.length;
+  if(v.id===1&&v.tl.length>=10)highlight('fail');else if(k&&k.id===1&&v.tl.length>=10)highlight('hunt');
+  v.alive=false;
+  for(const c of v.tl)trail[c]=0;v.tl=[];
+  // a kingdom's leader falling wipes its land (castles stay); an ally falling only loses its fence
+  if(v.team===v.id)for(let c=0;c<N;c++)if(owner[c]===v.team){const keep=players.some(q=>q.team===v.team&&!q.out&&Math.abs(cx(c)-q.hx)<=1&&Math.abs(cy(c)-q.hy)<=1);if(!keep){owner[c]=0;wall[c]=0}}
+  for(let i=0;i<30;i++)parts.push({x:v.x,y:v.y,vx:R(-9,9),vy:R(-10,3),life:1,max:1,col:i%2?hsl(v,55):'#c9ced6',s:R(2,5),g:16});
+  texts.push({x:v.x,y:v.y,t:'💥',life:1,col:'#fff',big:true});
+  v.respawn=2.8;
+  if(!v.bot){shake=12;beep(140,.4,'sawtooth',.06);
+    document.getElementById('deadTxt').textContent=(k?k.name:'מישהו')+' הפיל אותך!';
+    document.getElementById('dead').classList.remove('hidden');lastKiller=k?k.name:''}
+  else if(k&&k.team===1){beep(880,.1,'square',.04);beep(1320,.15,'square',.04,.08);texts.push({x:v.x,y:v.y-1.5,t:'הפלת את '+v.name+'!',life:1.4,col:'#fff'})}
+}
+// a surrounded castle: that whole kingdom joins whoever took it
+function join(v,lord){
+  if(v.out)return;
+  if(!v.bot){v.out=true;v.alive=false;document.getElementById('dead').classList.add('hidden');setTimeout(()=>endGame(lord),900);return}
+  const old=v.team;
+  for(const q of players)if(q.team===old){q.team=lord.team;q.hue=lord.hue;q.sat=lord.sat}
+  for(let c=0;c<N;c++)if(owner[c]===old)owner[c]=lord.team;
+  claimHome(v);
+  for(let i=0;i<50;i++)parts.push({x:v.hx+.5,y:v.hy+.5,vx:R(-10,10),vy:R(-12,3),life:1.3,max:1.3,col:i%2?hsl(lord,55):'#ffe066',s:R(2,6),g:16});
+  texts.push({x:v.hx+.5,y:v.hy-2,t:`👑 ${v.name} הצטרף ל${lord.name}!`,life:2.4,col:'#ffe066',big:true});
+  if(lord.id===1&&sceneOn)sceneCapAt=sceneClock();
+  if(lord.id===1){highlight('castle');shake=14;[523,659,784,1046,1318].forEach((f,i)=>beep(f,.15,'triangle',.06,i*.07))}
+  if(lords().length===1&&!me().out&&!sceneOn)setTimeout(()=>endGame(null,true),1200);
+}
+let lastKiller='',autoFilm=false;
+
+// ---------- viral moment recorder ----------
+// The game films itself in vertical 9:16 around your knight. When something dramatic happens it keeps
+// the last ~10 seconds as a clip, with a curiosity-gap hook to burn on top when you export it.
+const RW=SS>1?1080:540,RH=SS>1?1920:960,rc=document.createElement('canvas');rc.width=RW;rc.height=RH;const rx=rc.getContext('2d');
+const canRec=!!(window.MediaRecorder&&rc.captureStream);
+let recs=[],clips=[],recStream=null,slow=0,lastHL=-9;
+function pickMime(){for(const m of['video/mp4;codecs=avc1','video/mp4','video/webm;codecs=vp9','video/webm'])if(MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(m))return m;return''}
+function newRec(){recStream=recStream||rc.captureStream(30);const mt=pickMime(),r={chunks:[],t0:time,type:mt||'video/webm'};r.mr=new MediaRecorder(recStream,mt?{mimeType:mt,videoBitsPerSecond:3e6}:{});r.mr.ondataavailable=e=>{if(e.data.size)r.chunks.push(e.data)};r.mr.start(500);recs.push(r)}
+function recTick(){if(!canRec||!running)return;try{
+  const active=recs.filter(r=>!r.keep);if(!active.length||time-active[active.length-1].t0>6)newRec();
+  const a2=recs.filter(r=>!r.keep);if(a2.length>2){const r=a2[0];try{r.mr.stop()}catch(e){}recs=recs.filter(x=>x!==r)}}catch(e){}}
+let rcx=0,rcy=0;
+function drawRec(){if(!canRec||!running)return;const m=me(),K=CS*SS;let tx=(m.alive?m.x:m.hx+.5)*K,ty=(m.alive?m.y:m.hy+.5)*K;
+  if(sceneOn&&sceneCapAt){tx=24*K;ty=22*K}if(camOv){tx=camOv.x*K;ty=camOv.y*K;if(camOv.snap||!rcx){rcx=tx;rcy=ty}}if(!rcx||!sceneOn){rcx=tx;rcy=ty}else{rcx+=(tx-rcx)*.08;rcy+=(ty-rcy)*.08}const fx2=rcx,fy2=rcy;
+  const sh=cv.height*(camOv&&camOv.z?camOv.z:.8),sw=sh*9/16,sx=Math.max(0,Math.min(cv.width-sw,fx2-sw/2)),sy=Math.max(0,Math.min(cv.height-sh,fy2-sh/2));
+  rx.fillStyle='#3f7a33';rx.fillRect(0,0,RW,RH);rx.drawImage(cv,sx,sy,sw,sh,0,0,RW,RH)}
+const ORGANIC=['POV: אמרתי עוד משחק אחד ב־2 בלילה','אף אחד לא מדבר על המשחק הזה','המשחק הכי ממכר שמצאתי השנה','אני לא מאמין שזה עבד','חברים שלי לא מאמינים לי שזה קרה'];
+const HOOKS={
+  escape:['כמעט נחתכתי… 😳 חכו לסוף','שנייה אחת מהבית…','לא האמנתי שהספקתי 😱'],
+  bigloop:['תסתכלו מה קורה כשהלולאה נסגרת 🤯','לא האמנתי כמה זה צבע','כבשתי חצי מפה בבת אחת'],
+  castle:['הקפתי לו את הטירה והוא לא שם לב 👑','כל הממלכה שלו עברה אליי…','ככה כובשים ממלכה שלמה'],
+  fail:['חצי משבצת מהבית 💀','הייתי כל כך קרוב…','למה אסור לצאת רחוק מדי 😭'],
+  hunt:['הוא היה כל כך קרוב לבית…','חתכתי לו את הגדר ברגע האחרון 😈','תראו איך הפלתי את המוביל']};
+function highlight(kind){if(!canRec||time-lastHL<4)return;lastHL=time;slow=.8;
+  const list=HOOKS[kind],hook=list[(Math.random()*list.length)|0];
+  const r=recs.filter(x=>!x.keep)[0];if(!r)return;r.keep=1;
+  toast('🎬 רגע ויראלי נשמר!');
+  setTimeout(()=>{r.mr.onstop=()=>{clips.push({blob:new Blob(r.chunks,{type:r.type}),hook,kind,type:r.type});recs=recs.filter(x=>x!==r)};try{r.mr.stop()}catch(e){}},2200)}
+async function exportClip(c,btn){btn.disabled=true;btn.textContent='⏳ מכין קליף...';
+  const v=document.createElement('video');v.src=URL.createObjectURL(c.blob);v.muted=true;v.playsInline=true;
+  const ec=document.createElement('canvas');ec.width=RW;ec.height=RH;const ex=ec.getContext('2d');
+  const mt=pickMime(),mr=new MediaRecorder(ec.captureStream(30),mt?{mimeType:mt,videoBitsPerSecond:4e6}:{}),out=[];
+  mr.ondataavailable=e=>{if(e.data.size)out.push(e.data)};
+  const box=(t,y,size,bg)=>{ex.font=`900 ${size}px system-ui`;ex.textAlign='center';const w=Math.min(RW-40,ex.measureText(t).width+36),h=size+22;ex.fillStyle=bg;ex.beginPath();ex.roundRect(RW/2-w/2,y-h/2-6,w,h,14);ex.fill();ex.fillStyle=bg==='#fff'?'#111':'#fff';ex.fillText(t,RW/2,y+size*.35-6)};
+  const pov=ORGANIC[(Math.random()*ORGANIC.length)|0];let t0=performance.now();
+  const wrap=(t,y)=>{ex.font='900 46px system-ui';ex.textAlign='center';ex.lineJoin='round';const words=t.split(' '),lines=[];let l='';for(const w of words){const tt=l?l+' '+w:w;if(ex.measureText(tt).width>RW-60){lines.push(l);l=w}else l=tt}lines.push(l);
+    lines.forEach((ln,i)=>{ex.lineWidth=10;ex.strokeStyle='#000';ex.strokeText(ln,RW/2,y+i*56);ex.fillStyle='#fff';ex.fillText(ln,RW/2,y+i*56)})};
+  const frame=()=>{const el=(performance.now()-t0)/1000,dur=isFinite(v.duration)&&v.duration>0?v.duration:10,end=el>dur-1.8;
+    // slow push-in toward the end for drama
+    const z=1+Math.min(.12,Math.max(0,el-dur*.5)*.04);ex.save();ex.translate(RW/2,RH/2);ex.scale(z,z);ex.drawImage(v,-RW/2,-RH/2,RW,RH);ex.restore();
+    if(el<2.2){box(pov,120,30,'#fff');wrap(c.hook,210)}
+    else if(!end){wrap(c.hook,140);if(Math.floor(el*2)%2===0&&el>dur*.45)box('חכו לזה… 👀',RH*.62,34,'rgba(0,0,0,.6)')}
+    else{ex.fillStyle='rgba(0,0,0,.35)';ex.fillRect(0,0,RW,RH);box('המשחק נקרא',RH*.42,34,'rgba(0,0,0,.6)');wrap('🏰 חומות',RH*.52);box('תכתבו בתגובות כמה כבשתם 👇',RH*.66,26,'#fff')}
+    if(!v.ended)requestAnimationFrame(frame);else mr.stop()};
+  mr.onstop=async()=>{const b=new Blob(out,{type:mt||'video/webm'}),name='walls-'+c.kind+'-'+Date.now()+((mt||'').includes('mp4')?'.mp4':'.webm');
+    const dl=window.claude&&window.claude.use?await window.claude.use('downloads').catch(()=>null):null;
+    if(dl){try{await dl.save({filename:name,data:b});btn.textContent='✅ נשמר'}catch(e){btn.textContent=e&&e.code==='declined'?'📲 '+c.hook:'⚠️ לא נשמר'}}
+    else{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();a.remove();btn.textContent='✅ הורד'}
+    btn.disabled=false};
+  mr.start(250);try{await v.play()}catch(e){}frame()}
+function phonk(ac,out,t0,secs){const B=.5,S=B/4;const master=ac.createGain();master.gain.value=.55;const comp=ac.createDynamicsCompressor();master.connect(comp).connect(out);
+  const noise=ac.createBuffer(1,ac.sampleRate*.3,ac.sampleRate);{const d=noise.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1}
+  const kick=t=>{const o=ac.createOscillator(),g=ac.createGain();o.frequency.setValueAtTime(150,t);o.frequency.exponentialRampToValueAtTime(42,t+.18);g.gain.setValueAtTime(1,t);g.gain.exponentialRampToValueAtTime(.001,t+.35);o.connect(g).connect(master);o.start(t);o.stop(t+.4)};
+  const clap=t=>{const n=ac.createBufferSource(),f=ac.createBiquadFilter(),g=ac.createGain();n.buffer=noise;f.type='bandpass';f.frequency.value=1500;g.gain.setValueAtTime(.7,t);g.gain.exponentialRampToValueAtTime(.001,t+.18);n.connect(f).connect(g).connect(master);n.start(t);n.stop(t+.2)};
+  const hat=(t,v)=>{const n=ac.createBufferSource(),f=ac.createBiquadFilter(),g=ac.createGain();n.buffer=noise;f.type='highpass';f.frequency.value=8000;g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.001,t+.05);n.connect(f).connect(g).connect(master);n.start(t);n.stop(t+.06)};
+  const bass=(t,hz,len)=>{const o=ac.createOscillator(),g=ac.createGain(),sh=ac.createWaveShaper();const c=new Float32Array(256);for(let i=0;i<256;i++){const x=i/128-1;c[i]=Math.tanh(x*3)}sh.curve=c;o.type='sine';o.frequency.setValueAtTime(hz*1.5,t);o.frequency.exponentialRampToValueAtTime(hz,t+.08);g.gain.setValueAtTime(.8,t);g.gain.setValueAtTime(.8,t+len*.8);g.gain.exponentialRampToValueAtTime(.001,t+len);o.connect(sh).connect(g).connect(master);o.start(t);o.stop(t+len+.02)};
+  const bell=(t,hz)=>{for(const m of[1,1.48]){const o=ac.createOscillator(),f=ac.createBiquadFilter(),g=ac.createGain();o.type='square';o.frequency.value=hz*m;f.type='bandpass';f.frequency.value=hz*m;f.Q.value=3;g.gain.setValueAtTime(.16,t);g.gain.exponentialRampToValueAtTime(.001,t+.22);o.connect(f).connect(g).connect(master);o.start(t);o.stop(t+.25)}};
+  const roots=[55,55,49,52],mel=[0,3,7,10,7,3,12,10,0,3,7,3,10,7,12,15],st=x=>Math.pow(2,x/12);
+  for(let bar=0;bar*4*B<secs;bar++){const bt=t0+bar*4*B,root=roots[bar%4];
+    for(let b=0;b<4;b++){const t=bt+b*B;if(b===0||b===2)kick(t);if(b===2&&bar%2)kick(t+B*.75);if(b===1||b===3)clap(t);
+      for(let h=0;h<4;h++)hat(t+h*S,h%2?.08:.18)}
+    bass(bt,root,B*1.5);bass(bt+B*1.5,root,B);bass(bt+B*2.5,root*st(bar%2?3:-2),B*1.4);
+    for(let i=0;i<16;i++)if(i%3!==2)bell(bt+i*S,880*st(mel[(i+bar*5)%16])/2)}}
+function makeRec(ec){const ac=new (window.AudioContext||window.webkitAudioContext)(),dst=ac.createMediaStreamDestination();
+  const t0=ac.currentTime+.05;phonk(ac,dst,t0,120);editT0=performance.now()+50;
+  const stream=new MediaStream([...ec.captureStream(30).getVideoTracks(),...dst.stream.getAudioTracks()]);
+  const mt=pickMime(),mr=new MediaRecorder(stream,mt?{mimeType:mt,videoBitsPerSecond:5e6,audioBitsPerSecond:160000}:{}),out=[];mr.ondataavailable=e=>{if(e.data.size)out.push(e.data)};mr.start(250);
+  return{mr,out,mt,ac}}
+let editT0=0,editAC=null;
+async function exportEdit(btn){if(!clips.length)return;btn.disabled=true;btn.textContent='⏳ מכין אדיט...';
+  const ec=document.createElement('canvas');ec.width=RW;ec.height=RH;const ex=ec.getContext('2d');
+  const R0=makeRec(ec);editAC=R0.ac;
+  return exportEditInto(ex,R0.mr,R0.out,R0.mt,btn,'לא האמנתי שזה קרה 😳')}
+async function exportEditInto(ex,mr,out,mt,btn,caption){
+  const BEAT=.5,T0=editT0||performance.now(),BAR=110;let flashA=1,first=true;
+  for(const c of clips){const v=document.createElement('video');v.src=URL.createObjectURL(c.blob);v.muted=true;v.playsInline=true;
+    await new Promise(r=>{v.onloadedmetadata=r;setTimeout(r,1500)});
+    const dur=isFinite(v.duration)&&v.duration>0?v.duration:8;v.currentTime=Math.max(0,dur-5);v.playbackRate=1.6;
+    try{await v.play()}catch(e){}flashA=1;
+    await new Promise(done=>{const tick=()=>{const left=dur-v.currentTime;v.playbackRate=left<1.4?.45:1.6;
+      const beat=((performance.now()-T0)/1000)%BEAT/BEAT,z=1+(1-beat)*.06+(left<1.4?.08:0);
+      const sk=(1-beat)*(1-beat)*7,fast=left>=1.4;
+      ex.save();ex.translate(RW/2+(Math.random()-.5)*sk,RH/2+(Math.random()-.5)*sk);ex.scale(z,z);ex.globalAlpha=fast?.72:1;ex.filter='contrast(1.25) saturate(1.4) hue-rotate(-10deg)';ex.drawImage(v,-RW/2,-RH/2,RW,RH);
+      ex.globalCompositeOperation='lighter';ex.globalAlpha=.18;ex.filter='blur(10px) brightness(1.3)';ex.drawImage(v,-RW/2,-RH/2,RW,RH);ex.restore();ex.filter='none';ex.globalAlpha=1;ex.globalCompositeOperation='source-over';
+      const vg=ex.createRadialGradient(RW/2,RH/2,RH*.25,RW/2,RH/2,RH*.75);vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(0,10,30,.55)');ex.fillStyle=vg;ex.fillRect(0,0,RW,RH);
+      ex.fillStyle='#000';ex.fillRect(0,0,RW,BAR);ex.fillRect(0,RH-BAR,RW,BAR);
+      if(caption&&first){const ct=(performance.now()-T0)/1000;if(ct<2.4){ex.font='900 40px system-ui';ex.textAlign='center';ex.fillStyle='#fff';ex.fillText(caption,RW/2,BAR*.66)}}
+      if(flashA>0){ex.fillStyle=`rgba(255,255,255,${flashA})`;ex.fillRect(0,0,RW,RH);flashA-=.12}
+      if(v.ended||left<.05){v.pause();first=false;done();return}requestAnimationFrame(tick)};tick()})}
+  ex.fillStyle='#000';ex.fillRect(0,0,RW,RH);ex.font='900 64px system-ui';ex.textAlign='center';ex.fillStyle='#ffe066';ex.fillText('🏰 חומות',RW/2,RH/2);
+  await new Promise(r=>setTimeout(r,900));mr.onstop=async()=>{const b=new Blob(out,{type:mt||'video/webm'}),name='walls-edit-'+Date.now()+((mt||'').includes('mp4')?'.mp4':'.webm');
+    const dl=window.claude&&window.claude.use?await window.claude.use('downloads').catch(()=>null):null;
+    if(dl){try{await dl.save({filename:name,data:b});btn.textContent='✅ נשמר'}catch(e){btn.textContent='⚠️ לא נשמר'}}
+    else{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();a.remove();btn.textContent='✅ הורד'}btn.disabled=false;if(editAC){editAC.close();editAC=null}};mr.stop()}
+const LORE=['הוא מעולם לא חזר הביתה עם גדר פתוחה.','כל טירה שהוא הקיף, הצטרפה אליו.','אומרים שהוא כבש חצי ממלכה בלולאה אחת.','אף אחד לא נגע בגדר שלו. אף פעם.'];
+async function exportHero(btn){if(!clips.length)return;btn.disabled=true;btn.textContent='⏳ מכין אדיט קולנועי...';
+  const ec=document.createElement('canvas');ec.width=RW;ec.height=RH;const ex=ec.getContext('2d');
+  const R0=makeRec(ec),mr=R0.mr,out=R0.out,mt=R0.mt;editAC=R0.ac;
+  const name=me().name==='אתה'?'הממלכה שלי':me().name,lore=LORE[(Math.random()*LORE.length)|0];
+  const v0=document.createElement('video');v0.src=URL.createObjectURL(clips[clips.length-1].blob);v0.muted=true;v0.loop=true;try{await v0.play()}catch(e){}
+  const T=performance.now();
+  await new Promise(done=>{const tick=()=>{const t=(performance.now()-T)/1000;
+    ex.filter='grayscale(1) contrast(1.8) brightness(.55)';ex.drawImage(v0,0,0,RW,RH);ex.filter='none';
+    ex.fillStyle='rgba(0,0,0,.35)';ex.fillRect(0,0,RW,RH);
+    const sh=t<.6?(Math.random()-.5)*14:0;ex.font='900 92px system-ui';ex.textAlign='center';ex.shadowColor='#ff1a1a';ex.shadowBlur=28;ex.fillStyle='#ff2a2a';ex.fillText(name,RW/2+sh,260);ex.shadowBlur=0;
+    const shown=lore.slice(0,Math.floor(Math.max(0,t-.6)*22));ex.font='700 34px Courier New, monospace';ex.fillStyle='#fff';
+    const words=shown.split(' ');let line='',y=380;for(const w of words){const tt=line?line+' '+w:w;if(ex.measureText(tt).width>RW-70){ex.fillText(line,RW/2,y);y+=46;line=w}else line=tt}ex.fillText(line,RW/2,y);
+    if(t<.25){ex.fillStyle=`rgba(255,255,255,${1-t*4})`;ex.fillRect(0,0,RW,RH)}
+    if(t>3.6){v0.pause();done();return}requestAnimationFrame(tick)};tick()});
+  mr.pause&&0;await exportEditInto(ex,mr,out,mt,btn);}
+// ---------- staged "insane play" for promo videos ----------
+let songMode=false,camOv=null;
+// Video pipeline: analyse the song, then step the staged scene one frame at a time and hand back JPEG frames.
+async function analyzeSong(url){const ac=new (window.AudioContext||window.webkitAudioContext)(),buf=await ac.decodeAudioData(await (await fetch(url)).arrayBuffer());
+  const ch=buf.getChannelData(0),sr=buf.sampleRate,win=Math.floor(sr*.05),E=[];for(let i=0;i+win<ch.length;i+=win){let s2=0;for(let j=i;j<i+win;j+=4)s2+=ch[j]*ch[j];E.push(Math.sqrt(s2/(win/4)))}
+  const avg=(a,b)=>{let t=0,n=0;for(let i=Math.max(0,a);i<Math.min(E.length,b);i++){t+=E[i];n++}return n?t/n:0};
+  let drop=10,best=-1;for(let i=120;i<Math.min(E.length-20,500);i++){const d=avg(i,i+16)-avg(i-50,i);if(d>best){best=d;drop=i*.05}}
+  const total=Math.min(buf.duration,drop+8.5),beats=[];let lastB=-99;for(let i=Math.floor(drop/.05)+4;i<total/.05;i++){if(E[i]>1.3*avg(i-8,i)&&E[i]>=E[i-1]&&E[i]>=E[i+1]&&i-lastB>=7){beats.push(+(i*.05).toFixed(2));lastB=i}}
+  ac.close();return{drop:+drop.toFixed(2),total:+total.toFixed(2),beats}}
+let hqDrop=0,hqO=0;
+function hqPrep(drop){manualStep=true;songMode=true;hqDrop=drop;hqO=0;scene();const m=me();const pts=[{x:m.x,y:m.y},...m.wp];let L=0;for(let i=1;i<pts.length;i++)L+=Math.hypot(pts[i].x-pts[i-1].x,pts[i].y-pts[i-1].y);m.spd=L/(SPEED*(drop-.15));sceneT0=performance.now()}
+function hqStep(){const dt=1/30,o=hqO;hqO+=dt;sceneT0=performance.now()-o*1000;
+  camOv=o<1.8?{x:24,y:22,z:1,snap:o<.05}:o<hqDrop?{x:me().x,y:me().y,z:.75,snap:o<1.85}:o<hqDrop+1.6?{x:31,y:22,z:1}:{x:30,y:22,z:.95};
+  if(o>=hqDrop&&!sceneCapAt)sceneCapAt=o;sceneTick();update(dt);fx(dt);draw();drawRec();return rc.toDataURL('image/jpeg',.88)}
+
+// The song drives everything: the loop closes exactly on the drop, then the camera jump-cuts on the beats.
+async function songEdit(url){songMode=true;
+  const ac=new (window.AudioContext||window.webkitAudioContext)(),buf=await ac.decodeAudioData(await (await fetch(url)).arrayBuffer());
+  const ch=buf.getChannelData(0),sr=buf.sampleRate,win=Math.floor(sr*.05),E=[];for(let i=0;i+win<ch.length;i+=win){let s2=0;for(let j=i;j<i+win;j+=4)s2+=ch[j]*ch[j];E.push(Math.sqrt(s2/(win/4)))}
+  const avg=(a,b)=>{let t=0,n=0;for(let i=Math.max(0,a);i<Math.min(E.length,b);i++){t+=E[i];n++}return n?t/n:0};
+  let drop=10,best=-1;for(let i=120;i<Math.min(E.length-20,500);i++){const d=avg(i,i+16)-avg(i-50,i);if(d>best){best=d;drop=i*.05}}
+  const total=Math.min(buf.duration,drop+8.5),beats=[];let lastB=-99;for(let i=Math.floor(drop/.05)+4;i<total/.05;i++){if(E[i]>1.3*avg(i-8,i)&&E[i]>=E[i-1]&&E[i]>=E[i+1]&&i-lastB>=7){beats.push(i*.05);lastB=i}}
+  if(beats.length<6){beats.length=0;for(let t=drop+.5;t<total;t+=.5)beats.push(t)}
+  window.__songInfo={drop:+drop.toFixed(2),total:+total.toFixed(2),beats:beats.length};
+  scene();const m=me();const pts=[{x:m.x,y:m.y},...m.wp];let L=0;for(let i=1;i<pts.length;i++)L+=Math.hypot(pts[i].x-pts[i-1].x,pts[i].y-pts[i-1].y);m.spd=L/(SPEED*(drop-.15));
+  const oc=document.createElement('canvas');oc.width=RW;oc.height=RH;const ox=oc.getContext('2d'),dst=ac.createMediaStreamDestination(),src=ac.createBufferSource();src.buffer=buf;src.connect(dst);
+  const mt=pickMime(),mr=new MediaRecorder(new MediaStream([...oc.captureStream(30).getVideoTracks(),...dst.stream.getAudioTracks()]),mt?{mimeType:mt,videoBitsPerSecond:6e6,audioBitsPerSecond:192000}:{}),out=[];mr.ondataavailable=e=>{if(e.data.size)out.push(e.data)};
+  mr.start(250);src.start(ac.currentTime+.05);const T=performance.now()+50;
+  // TikTok's own text style: black text on a white rounded box, near the top
+  const ttCap=(t,y)=>{ox.font='800 38px "TikTok Sans","Proxima Nova",-apple-system,"Helvetica Neue",system-ui';ox.textAlign='center';const w=ox.measureText(t).width+44,h=62;ox.fillStyle='#fff';ox.beginPath();ox.roundRect(RW/2-w/2,y-h/2,w,h,12);ox.fill();ox.fillStyle='#111';ox.textBaseline='middle';ox.fillText(t,RW/2,y+1);ox.textBaseline='alphabetic'};
+  // keep a short history of frames for the instant replay
+  const HIST=[],FW=270,FH=480;let hk=0;
+  // frame: game in the middle of the screen over a blurred copy of itself, like a screen recording
+  const frame=(srcC,z,sk,filt)=>{ox.save();ox.translate(RW/2+(Math.random()-.5)*sk,RH/2+(Math.random()-.5)*sk);ox.scale(z,z);ox.filter=filt||'none';ox.drawImage(srcC,-RW/2,-RH/2,RW,RH);ox.restore();ox.filter='none'};
+  const big=(t,y,size)=>{ox.font=`900 ${size}px "Arial Black",system-ui`;const mw=ox.measureText(t).width;if(mw>RW-60){size=Math.floor(size*(RW-60)/mw);ox.font=`900 ${size}px "Arial Black",system-ui`}ox.textAlign='center';ox.lineJoin='round';ox.lineWidth=size/4;ox.strokeStyle='#000';ox.strokeText(t,RW/2,y);ox.fillStyle='#fff';ox.fillText(t,RW/2,y)};
+  let flash=0,waveShown=false,lastBeat=-1;const WIDE=1.6,REPLAY=3.2,RPL_SPEED=.45;
+  await new Promise(done=>{const tick=()=>{const o=(performance.now()-T)/1000;
+    if(o>=drop&&!sceneCapAt)sceneCapAt=sceneClock();
+    // remember frames while the run is happening
+    if(o<drop){if(!HIST[hk%90]){const c=document.createElement('canvas');c.width=FW;c.height=FH;HIST[hk%90]=c}HIST[hk%90].getContext('2d').drawImage(rc,0,0,FW,FH);HIST[hk%90].t=o;hk++}
+    const pre=drop-o,tension=pre>0&&pre<1.6,step=Math.floor(o/2),inStep=(o%2)/2,lvl=Math.min(1,o/drop);
+    if(o<drop){camOv=null;const z=1+step*.03+Math.max(0,.1-inStep*.4)*lvl+(tension?(1.6-pre)/1.6*.18:0),sk=(inStep<.06?lvl*7:0)+(tension?3:0);
+      camOv=o<1.8?{x:24,y:22,z:1}:{x:me().x,y:me().y,z:.55};frame(rc,z,sk,tension?'contrast(1.2) saturate(.5)':'none');ttCap('אני לא מאמין שזה עבד',150);big('לא האמנתי שהספקתי',262,54);ox.font='64px system-ui';ox.textAlign='center';ox.fillText('😱💀',RW/2,345)}
+    else if(o<drop+WIDE){camOv={x:27,y:22,z:1};if(!waveShown){waveShown=true;flash=1}const z=1+Math.max(0,.25-(o-drop))*.6,sk=o-drop<.35?(.35-(o-drop))*60:0;frame(rc,z,sk,'contrast(1.2) saturate(1.5)')}
+    else if(o<drop+WIDE+REPLAY){// instant replay: the last seconds of the chase in slow motion, pushing in
+      const rt=drop-(REPLAY*RPL_SPEED)+(o-drop-WIDE)*RPL_SPEED,best=HIST.filter(Boolean).reduce((a,c)=>Math.abs(c.t-rt)<Math.abs(a.t-rt)?c:a);
+      const pr=(o-drop-WIDE)/REPLAY,b2=beats.findIndex(b=>b>o)-1;if(b2!==lastBeat&&b2>=0){lastBeat=b2;flash=.25}
+      frame(best,1.05+pr*.25,0,'contrast(1.15) saturate(1.3)');ox.fillStyle='rgba(255,255,255,.85)';ox.font='800 22px system-ui';ox.textAlign='left';ox.fillText('● REPLAY',RW*.08,RH*.16)}
+    else{camOv={x:27,y:22,z:1};const b2=beats.findIndex(b=>b>o)-1;if(b2!==lastBeat&&b2>=0){lastBeat=b2;flash=.35}frame(rc,1+Math.max(0,.12-((o*2)%1))*.5,0,'contrast(1.2) saturate(1.5)')}
+    if(flash>0){ox.fillStyle=`rgba(255,255,255,${flash})`;ox.fillRect(0,0,RW,RH);flash-=.08}
+    if(o>total-1){ox.fillStyle=`rgba(0,0,0,${Math.min(1,(o-(total-1))/.5)})`;ox.fillRect(0,0,RW,RH);if(o>total-.6){ox.font='900 72px system-ui';ox.textAlign='center';ox.fillStyle='#ffe066';ox.fillText('🏰 חומות',RW/2,RH/2)}}
+    if(o>=total){done();return}requestAnimationFrame(tick)};tick()});
+  mr.onstop=async()=>{ac.close();songMode=false;camOv=null;sceneOn=false;running=false;const b=new Blob(out,{type:mt||'video/webm'}),name='walls-boom-'+Date.now()+((mt||'').includes('mp4')?'.mp4':'.webm');
+    const dl=window.claude&&window.claude.use?await window.claude.use('downloads').catch(()=>null):null;
+    if(dl){try{await dl.save({filename:name,data:b})}catch(e){}}else{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();a.remove()}window.__extreme=name};
+  mr.stop()}
+let sceneOn=false,sceneRec=null,sceneT0=0,sceneCapAt=0,sceneChaseFrom=null;
+const sceneClock=()=>(performance.now()-sceneT0)/1000;
+function scene(){autoFilm=true;start();sceneOn=true;sceneCapAt=0;
+  const m=me(),e=players[1];owner.fill(0);wall.fill(0);trail.fill(0);
+  const extra=(window.__multi|0);for(const p of players){p.tl=[];if(p!==m&&p!==e){const k=players.indexOf(p)-1;if(k<=extra){p.out=false;p.alive=true;p.puppet=true;p.x=36.5+k*2;p.y=22.5+k;p.chaseK=k}else{p.out=true;p.alive=false}}}
+  m.hx=8;m.hy=22;e.hx=36;e.hy=22;m.name='אני';
+  things=things.filter(t=>t.kind!=='home'&&Math.hypot(t.x-36,t.y-22)>3&&Math.hypot(t.x-8,t.y-22)>5);
+  things.push({x:m.hx,y:m.hy,kind:'home',homeOf:m.id,own:m.team,pop:0},{x:e.hx,y:e.hy,kind:'home',homeOf:e.id,own:e.team,pop:0});
+  for(let y=17;y<=27;y++)for(let x=4;x<=12;x++)owner[idx(x,y)]=m.team;
+  for(let y=16;y<=28;y++)for(let x=29;x<=43;x++)owner[idx(x,y)]=e.team;
+  for(let c=0;c<N;c++){const o=owner[c];if(!o)continue;const x=cx(c),y=cy(c);if(!(owner[c-1]===o&&owner[c+1]===o&&owner[c-W]===o&&owner[c+W]===o))wall[c]=WALLHP}
+  m.x=11.5;m.y=22.5;m.scripted=true;m.wp=[{x:14,y:13.5},{x:46.5,y:13.5},{x:46.5,y:31.5},{x:11.5,y:31.5},{x:11.5,y:26.5}];
+  e.x=36.5;e.y=22.5;e.puppet=true;e.alive=true;
+  for(const t of things)t.own=owner[idx(t.x,t.y)];
+  if(songMode){sceneT0=performance.now();sceneChaseFrom=null;return}
+  // record just the scene
+  recStream=recStream||rc.captureStream(30);const mt=pickMime();sceneRec={chunks:[],type:mt||'video/webm'};sceneRec.mr=new MediaRecorder(recStream,mt?{mimeType:mt,videoBitsPerSecond:4e6}:{});sceneRec.mr.ondataavailable=ev=>{if(ev.data.size)sceneRec.chunks.push(ev.data)};sceneRec.mr.start(250);sceneT0=performance.now();
+  sceneChaseFrom=null}
+function sceneTick(){if(!sceneOn||!running)return;const m=me(),e=players[1];
+  // the enemy bursts out of its castle and hunts you down the last two legs
+  if(m.wp.length<=2&&!sceneChaseFrom){sceneChaseFrom={x:m.x+7,y:m.y+.2}}
+  if(sceneChaseFrom&&m.alive){const left=m.wp.length,prog=left===2?Math.min(1,(46.5-m.x)/35):1,gap=left===2?6.5-prog*4.5:Math.max(.7,2-(31.5-m.y)/4*1.3);
+    const bx=left===2?m.x+gap:m.x,by=left===2?m.y+.25:m.y+gap;e.x+=(bx-e.x)*.35;e.y+=(by-e.y)*.35;e.face=e.x>m.x?-1:1;e.bob+=.4;e.dash=left===1?1:0}
+  if(sceneChaseFrom&&m.alive)for(const p of players){if(!p.chaseK||!p.alive)continue;const g=1.6+p.chaseK*1.3,ang=p.chaseK*1.9,tx=m.x+Math.cos(ang)*g*1.4,ty=m.y+Math.sin(ang)*g;p.x+=(tx-p.x)*.22;p.y+=(ty-p.y)*.22;p.face=p.x>m.x?-1:1;p.bob+=.4}
+  if(!songMode&&sceneCapAt&&sceneClock()>sceneCapAt+3.2){sceneOn=false;running=false;const r=sceneRec;r.mr.onstop=()=>{const blob=new Blob(r.chunks,{type:r.type});window.__scene={blob,capAt:sceneCapAt,type:r.type};exportExtreme(blob,sceneCapAt)};r.mr.stop()}}
+function phonkDrop(ac,out,t0,drop,secs){const lp=ac.createBiquadFilter();lp.type='lowpass';lp.frequency.setValueAtTime(500,t0);lp.frequency.setValueAtTime(500,drop-2);lp.frequency.exponentialRampToValueAtTime(3000,drop-.3);lp.frequency.setValueAtTime(20000,drop);
+  const duck=ac.createGain();duck.gain.setValueAtTime(1,t0);duck.gain.setValueAtTime(1,drop-.35);duck.gain.linearRampToValueAtTime(0,drop-.3);duck.gain.setValueAtTime(1.15,drop);lp.connect(duck).connect(out);phonk(ac,lp,t0,secs);
+  const n=ac.createBufferSource(),buf=ac.createBuffer(1,ac.sampleRate*2.2,ac.sampleRate),d=buf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;n.buffer=buf;
+  const bp=ac.createBiquadFilter();bp.type='bandpass';bp.Q.value=2;bp.frequency.setValueAtTime(300,drop-2.2);bp.frequency.exponentialRampToValueAtTime(7000,drop-.3);const ng=ac.createGain();ng.gain.setValueAtTime(.001,drop-2.2);ng.gain.exponentialRampToValueAtTime(.5,drop-.32);ng.gain.setValueAtTime(0,drop-.3);n.connect(bp).connect(ng).connect(out);n.start(drop-2.2);
+  const o=ac.createOscillator(),g=ac.createGain();o.frequency.setValueAtTime(90,drop);o.frequency.exponentialRampToValueAtTime(30,drop+1.2);g.gain.setValueAtTime(1.3,drop);g.gain.exponentialRampToValueAtTime(.001,drop+1.6);o.connect(g).connect(out);o.start(drop);o.stop(drop+1.7)}
+async function exportExtreme(blob,capAt){const ec=document.createElement('canvas');ec.width=RW;ec.height=RH;const ex=ec.getContext('2d');
+  const v=document.createElement('video');v.src=URL.createObjectURL(blob);v.muted=true;v.playsInline=true;await new Promise(r=>{v.onloadedmetadata=r;setTimeout(r,1500)});
+  const SLOW=1.4,SR=.3,pre=Math.max(0,capAt-SLOW),dropOut=pre+SLOW/SR;
+  const ac=new (window.AudioContext||window.webkitAudioContext)(),dst=ac.createMediaStreamDestination(),t0=ac.currentTime+.05;phonkDrop(ac,dst,t0,t0+dropOut,dropOut+8);
+  const stream=new MediaStream([...ec.captureStream(30).getVideoTracks(),...dst.stream.getAudioTracks()]);const mt=pickMime(),mr=new MediaRecorder(stream,mt?{mimeType:mt,videoBitsPerSecond:6e6,audioBitsPerSecond:192000}:{}),out=[];mr.ondataavailable=e=>{if(e.data.size)out.push(e.data)};mr.start(250);
+  const T=performance.now()+50;try{await v.play()}catch(e){}let frozen=null,freezeAt=0,flash=0;
+  const txt=(t,y,size,col)=>{ex.font=`900 ${size}px system-ui`;ex.textAlign='center';ex.lineJoin='round';ex.lineWidth=size/5;ex.strokeStyle='#000';ex.strokeText(t,RW/2,y);ex.fillStyle=col;ex.fillText(t,RW/2,y)};
+  await new Promise(done=>{const tick=()=>{const o=(performance.now()-T)/1000;
+    if(o<dropOut){v.playbackRate=v.currentTime<pre?1:SR}
+    else if(!frozen){frozen=document.createElement('canvas');frozen.width=RW;frozen.height=RH;frozen.getContext('2d').drawImage(v,0,0,RW,RH);v.pause();freezeAt=o;flash=1}
+    const tension=o<dropOut&&v.currentTime>=pre;
+    let z=1;if(tension)z=1+(o-pre)/(dropOut-pre)*.25;if(frozen)z=1.25+Math.min(.15,(o-freezeAt)*.2);
+    const sk=frozen&&o-freezeAt<.5?(.5-(o-freezeAt))*30:tension?2:0;
+    ex.save();ex.translate(RW/2+(Math.random()-.5)*sk,RH/2+(Math.random()-.5)*sk);ex.scale(z,z);
+    ex.filter=frozen?'contrast(1.4) saturate(1.6)':tension?'contrast(1.2) saturate(.6)':'contrast(1.15) saturate(1.3)';ex.drawImage(frozen||v,-RW/2,-RH/2,RW,RH);ex.restore();ex.filter='none';
+    ex.fillStyle='#000';ex.fillRect(0,0,RW,100);ex.fillRect(0,RH-100,RW,100);
+    if(tension){const r=(1-((o-pre)/(dropOut-pre)))*RH*.35+RH*.25;const g=ex.createRadialGradient(RW/2,RH/2,r*.6,RW/2,RH/2,r*1.4);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,0,0,.75)');ex.fillStyle=g;ex.fillRect(0,0,RW,RH)}
+    if(o<2.6)txt('חכו לסוף… 😳',66,40,'#fff');
+    if(tension)txt('…',RH-40,40,'#fff');
+    if(flash>0){ex.fillStyle=`rgba(255,255,255,${flash})`;ex.fillRect(0,0,RW,RH);flash-=.07}
+    if(frozen&&o-freezeAt>.25){txt('לא מאמין שזה קרה 😱',RH*.5,52,'#ffe066');if(o-freezeAt>1.2)txt('כל הממלכה שלו עברה אליי',RH*.5+70,32,'#fff')}
+    if(frozen&&o-freezeAt>3.4){done();return}requestAnimationFrame(tick)};tick()});
+  mr.onstop=async()=>{ac.close();const b=new Blob(out,{type:mt||'video/webm'}),name='walls-insane-'+Date.now()+((mt||'').includes('mp4')?'.mp4':'.webm');window.__extreme=name;
+    const dl=window.claude&&window.claude.use?await window.claude.use('downloads').catch(()=>null):null;
+    if(dl){try{await dl.save({filename:name,data:b})}catch(e){}}else{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();a.remove()}
+    document.getElementById('end').classList.remove('hidden');document.getElementById('endTitle').textContent='🎬 המהלך המטורף מוכן';document.getElementById('endTxt').textContent='הסרטון נשמר. אפשר להעלות לטיקטוק.'};
+  mr.stop()}
+function showClips(){const el=document.getElementById('clips');if(!canRec){el.innerHTML='';return}
+  if(!clips.length){el.innerHTML='<p style="font-size:15px;opacity:.7">לא נשמרו רגעים ויראליים הפעם</p>';return}
+  el.innerHTML='<p style="font-size:17px;font-weight:800">🎬 הרגעים הוויראליים שלך</p>';
+  {const h=document.createElement('button');h.style.cssText='display:block;margin:6px auto;font-size:17px;background:#2a0a0a;color:#ff4d4d;box-shadow:0 4px 0 #000';h.textContent='🩸 אדיט קולנועי של הממלכה שלך';h.onclick=()=>exportHero(h);el.appendChild(h)}
+  {const e=document.createElement('button');e.style.cssText='display:block;margin:6px auto;font-size:17px';e.textContent='🎞️ אדיט VFX עם מוזיקה מקורית';e.onclick=()=>exportEdit(e);el.appendChild(e)}
+  clips.forEach(c=>{const b=document.createElement('button');b.className='alt';b.style.cssText='display:block;margin:6px auto;font-size:16px';b.textContent='📲 '+c.hook;b.onclick=()=>exportClip(c,b);el.appendChild(b)});
+  el.insertAdjacentHTML('beforeend','<p style="font-size:13px;opacity:.65">כל קליף יוצא אנכי (לטיקטוק) עם הכיתוב למעלה. </p>')}
+
+// ---------- update ----------
+function update(dt){
+  time+=dt;left-=dt;if(left<=0){endGame(null);return}
+  if(!songMode&&!autoFilm){goalT-=dt;if(goalT<=0){goalT=.5;if(scoreOf(1)/N*100>=L().goal){endGame(null,true);return}}}
+  for(const p of players){
+    if(p.out)continue;
+    if(!p.alive){p.respawn-=dt;if(p.respawn<=0)respawn(p);continue}
+    if(p.puppet)continue;
+    if(p.bot||autoFilm)botThink(p,dt);else humanDir(p);
+    p.dashCd-=dt;p.dash-=dt;
+    if(Math.abs(p.dx)>.2)p.face=p.dx>0?1:-1;
+    const sp=SPEED*(p.dash>0?2.2:1)*(p.spd||1);
+    const nx=Math.max(.5,Math.min(W-.5,p.x+p.dx*sp*dt)),ny=Math.max(.5,Math.min(H-.5,p.y+p.dy*sp*dt));
+    const cc=idx(Math.floor(p.x),Math.floor(p.y)),nc=idx(Math.floor(nx),Math.floor(ny));
+    if(nc!==cc&&wall[nc]>0&&owner[nc]!==p.team){
+      p.brk+=dt;p.bob+=dt*40;
+      if(p.brk>.42){p.brk=0;wall[nc]--;
+        for(let i=0;i<6;i++)parts.push({x:cx(nc)+.5,y:cy(nc)+.5,vx:R(-4,4),vy:R(-6,-1),life:.5,max:.5,col:'#9aa0a8',s:R(2,4),g:18});
+        if(!p.bot){shake=Math.max(shake,4);beep(180,.06,'square',.05)}
+        if(owner[nc]===1&&p.team!==1&&wall[nc]===WALLHP-1)texts.push({x:cx(nc)+.5,y:cy(nc)-.5,t:'🔔 פורצים לך!',life:1.3,col:'#fff'});
+        if(wall[nc]<=0)texts.push({x:cx(nc)+.5,y:cy(nc)+.5,t:'פריצה!',life:.9,col:'#ffe066'});
+      }
+      continue;
+    }
+    p.brk=0;p.x=nx;p.y=ny;p.bob+=dt*sp*2.6;
+    if(Math.random()<dt*10)parts.push({x:p.x-p.dx*.3,y:p.y+.35,vx:R(-.6,.6),vy:R(-1,-.2),life:.4,max:.4,col:'rgba(120,90,50,.45)',s:R(2,3.5),g:0});
+    if(nc!==cc)enterCell(p,nc);
+  }
+  for(const t of things){const o=owner[idx(t.x,t.y)];
+    if(t.kind==='home'){const v=players[t.homeOf-1];if(o&&!v.out&&o!==v.team)join(v,players[o-1]);t.own=v.team;continue}
+    if(o!==t.own){
+      if(o){const p=players[o-1];texts.push({x:t.x+.5,y:t.y-1,t:(t.big?'🏰 הטירה נכבשה!':'🏡 כפר נכבש!'),life:1.5,col:hsl(p,90)});if(o===1){[784,988,1175].forEach((f,i)=>beep(f,.14,'triangle',.05,i*.08));shake=Math.max(shake,6)}}
+      t.own=o;t.pop=1}}
+}
+function fx(dt){
+  shake=Math.max(0,shake-dt*30);
+  for(const q of parts){q.life-=dt;q.x+=q.vx*dt;q.y+=q.vy*dt;q.vy+=q.g*dt;q.vx*=.98}
+  parts=parts.filter(q=>q.life>0);
+  for(const t of texts){t.life-=dt;t.y-=dt*1.4}
+  texts=texts.filter(t=>t.life>0);
+  for(const t of things)t.pop=Math.max(0,t.pop-dt*2.5);
+}
+function scoreOf(team){let s=0;for(let c=0;c<N;c++)if(owner[c]===team)s++;return s}
+function points(team,cells){let s=cells;for(const t of things)if(t.own===team)s+=t.kind==='home'?100:t.big?150:40;return s}
+
+// ---------- draw ----------
+function rr(x,y,w,h,r){ctx.beginPath();ctx.roundRect(x,y,w,h,r)}
+function draw(){
+  ctx.save();ctx.scale(SS,SS);
+  if(shake>0)ctx.translate(R(-shake,shake)*.6,R(-shake,shake)*.6);
+  ctx.drawImage(bg,0,0);
+  // cells not reached by the wave yet stay neutral-looking, then flash as it passes
+  for(const p of players){if(p.team!==p.id)continue;ctx.fillStyle=hsl(p,70,.78);for(let c=0;c<N;c++)if(owner[c]===p.id)ctx.fillRect(cx(c)*CS,cy(c)*CS,CS,CS)}
+  for(let c=0;c<N;c++){const f=time-capT[c];if(f<-2||f>.6)continue;const X=cx(c)*CS,Y=cy(c)*CS;if(f<0){ctx.fillStyle='rgba(126,196,90,.92)';ctx.fillRect(X,Y,CS,CS)}else{ctx.fillStyle=`rgba(255,255,220,${(1-f/.6)*.8})`;ctx.fillRect(X,Y,CS,CS)}}
+  ctx.lineWidth=2;
+  for(const p of players){if(p.team!==p.id)continue;ctx.strokeStyle=hsl(p,45,.9);ctx.beginPath();
+    for(let c=0;c<N;c++){if(owner[c]!==p.id)continue;const x=cx(c),y=cy(c),X=x*CS,Y=y*CS;
+      if(y===0||owner[c-W]!==p.id){ctx.moveTo(X,Y);ctx.lineTo(X+CS,Y)}
+      if(y===H-1||owner[c+W]!==p.id){ctx.moveTo(X,Y+CS);ctx.lineTo(X+CS,Y+CS)}
+      if(x===0||owner[c-1]!==p.id){ctx.moveTo(X,Y);ctx.lineTo(X,Y+CS)}
+      if(x===W-1||owner[c+1]!==p.id){ctx.moveTo(X+CS,Y);ctx.lineTo(X+CS,Y+CS)}}
+    ctx.stroke()}
+  for(let c=0;c<N;c++){if(wall[c]<=0||!owner[c])continue;const p=players[owner[c]-1],X=cx(c)*CS,Y=cy(c)*CS;
+    ctx.fillStyle='rgba(0,0,0,.25)';rr(X+1,Y+3,CS-2,CS-2,4);ctx.fill();
+    ctx.fillStyle='#8f949c';rr(X+1,Y+1,CS-2,CS-3,4);ctx.fill();
+    ctx.fillStyle='#b6bbc3';rr(X+2,Y+2,CS-4,6,3);ctx.fill();
+    ctx.fillStyle=hsl(p,50);ctx.fillRect(X+3,Y+CS-6,CS-6,3);
+    const dmg=WALLHP-wall[c];
+    if(dmg>0){ctx.strokeStyle='#3d3f44';ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(X+4,Y+3);ctx.lineTo(X+8,Y+8);if(dmg>1)ctx.lineTo(X+6,Y+12);if(dmg>2){ctx.moveTo(X+12,Y+3);ctx.lineTo(X+9,Y+9)}ctx.stroke()}}
+  for(const p of players){for(let i=0;i<p.tl.length;i++){const c=p.tl[i],X=cx(c)*CS+CS/2,Y=cy(c)*CS+CS/2,w=Math.sin(time*12+i)*1.2;
+    ctx.fillStyle=hsl(p,60,.35);ctx.fillRect(cx(c)*CS,cy(c)*CS,CS,CS);
+    ctx.fillStyle='#8a5a2b';rr(X-2+w*.3,Y-6,4,12,1.5);ctx.fill();
+    ctx.fillStyle=hsl(p,55);ctx.beginPath();ctx.moveTo(X-3+w*.3,Y-6);ctx.lineTo(X+w*.3,Y-10);ctx.lineTo(X+3+w*.3,Y-6);ctx.fill()}}
+  for(const t of things){const X=t.x*CS+CS/2,Y=t.y*CS+CS/2,home=t.kind==='home',s=(home?1.5:t.big?1.6:1)*(1+t.pop*.5),p=t.own?players[t.own-1]:null;
+    ctx.save();ctx.translate(X,Y);ctx.scale(s,s);
+    ctx.fillStyle='rgba(0,0,0,.2)';ctx.beginPath();ctx.ellipse(0,9,10,3,0,0,7);ctx.fill();
+    if(home||t.big){ctx.fillStyle=home?'#efe4c8':'#d9cfb8';ctx.fillRect(-9,-4,18,13);ctx.fillRect(-11,-9,6,18);ctx.fillRect(5,-9,6,18);
+      ctx.fillStyle=p?hsl(p,45):'#777';ctx.beginPath();ctx.moveTo(-12,-9);ctx.lineTo(-8,-15);ctx.lineTo(-4,-9);ctx.moveTo(4,-9);ctx.lineTo(8,-15);ctx.lineTo(12,-9);ctx.fill();
+      ctx.fillStyle='#5b4632';rr(-3,2,6,7,3);ctx.fill();
+      if(home){ctx.fillStyle=p?hsl(p,45):'#777';ctx.beginPath();ctx.moveTo(-3,-9);ctx.lineTo(0,-18);ctx.lineTo(3,-9);ctx.fill()}}
+    else{ctx.fillStyle='#f3e6c8';ctx.fillRect(-6,-2,12,10);ctx.fillStyle=p?hsl(p,48):'#a0522d';ctx.beginPath();ctx.moveTo(-8,-1);ctx.lineTo(0,-9);ctx.lineTo(8,-1);ctx.fill();ctx.fillStyle='#6b4a2b';ctx.fillRect(-2,3,4,5)}
+    if(p&&!home){const fy=t.big?-15:-9;ctx.strokeStyle='#444';ctx.lineWidth=1.2;ctx.beginPath();ctx.moveTo(0,fy);ctx.lineTo(0,fy-10);ctx.stroke();
+      ctx.fillStyle=hsl(p,55);ctx.beginPath();const wv=Math.sin(time*6+t.x)*1.5;ctx.moveTo(0,fy-10);ctx.quadraticCurveTo(4,fy-11+wv,8,fy-8);ctx.lineTo(0,fy-6);ctx.fill()}
+    else if(!p&&!songMode){ctx.font='bold 8px system-ui';ctx.fillStyle='#fff';ctx.textAlign='center';ctx.fillText('+'+(t.big?150:40),0,-12)}
+    ctx.restore()}
+  const lead=lords().sort((a,b)=>points(b.team,scoreOf(b.team))-points(a.team,scoreOf(a.team)))[0];
+  for(const p of players){if(!p.alive||p.out)continue;
+    const X=p.x*CS,Y=p.y*CS,b=Math.sin(p.bob),hop=Math.abs(b)*3,sq=1+Math.abs(b)*.08;
+    ctx.fillStyle='rgba(0,0,0,.25)';ctx.beginPath();ctx.ellipse(X,Y+8,8-hop*.6,3,0,0,7);ctx.fill();
+    ctx.save();ctx.translate(X,Y-hop);ctx.scale(p.face/sq,sq);
+    if(p.dash>0){ctx.globalAlpha=.3;ctx.fillStyle=hsl(p,60);ctx.beginPath();ctx.arc(-6,0,8,0,7);ctx.fill();ctx.globalAlpha=1}
+    ctx.fillStyle='#555';ctx.fillRect(-4,5+b*2,3,5);ctx.fillRect(1,5-b*2,3,5);
+    ctx.fillStyle=hsl(p,52);ctx.beginPath();ctx.arc(0,1,8,0,7);ctx.fill();
+    ctx.fillStyle=hsl(p,70);ctx.beginPath();ctx.arc(-2,-1,3,0,7);ctx.fill();
+    ctx.fillStyle='#c8ccd3';ctx.beginPath();ctx.arc(0,-6,7,Math.PI,0);ctx.lineTo(7,-3);ctx.lineTo(-7,-3);ctx.fill();
+    ctx.fillStyle='#2b2d33';ctx.fillRect(1,-6,6,2);
+    ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(4,-5,1.2,0,7);ctx.fill();
+    ctx.fillStyle=hsl(p,55);ctx.beginPath();ctx.ellipse(-3,-14+Math.sin(time*10+p.id)*.8,5,2.5,-.5,0,7);ctx.fill();
+    ctx.save();ctx.translate(7,1);ctx.rotate(p.brk>0?-1.4+p.brk*5:(.3+b*.3));ctx.fillStyle='#e5e8ee';ctx.fillRect(0,-12,2.5,12);ctx.fillStyle='#8a5a2b';ctx.fillRect(-2,-1,6.5,2.5);ctx.restore();
+    ctx.restore();
+    ctx.font='bold 11px system-ui';ctx.textAlign='center';ctx.lineWidth=3;ctx.strokeStyle='rgba(0,0,0,.55)';
+    const nm=songMode?'':(lead&&p.id===lead.id?'👑 ':'')+p.name;ctx.strokeText(nm,X,Y-24);ctx.fillStyle=p.team===1&&p.id!==1?'#ffe066':'#fff';ctx.fillText(nm,X,Y-24);
+    if(!p.bot){ctx.strokeStyle='rgba(255,255,255,.8)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(X,Y,13+Math.sin(time*5)*1.5,0,7);ctx.stroke()}
+  }
+  for(const q of parts){ctx.globalAlpha=Math.max(0,q.life/q.max);ctx.fillStyle=q.col;if(q.conf){ctx.fillRect(q.x*CS,q.y*CS,q.s*1.5,q.s)}else{ctx.beginPath();ctx.arc(q.x*CS,q.y*CS,q.s,0,7);ctx.fill()}}
+  ctx.globalAlpha=1;
+  for(const t of texts){if(songMode)break;const a=Math.min(1,t.life*2);ctx.globalAlpha=a;ctx.font=`900 ${t.big?28:18}px system-ui`;ctx.textAlign='center';ctx.lineWidth=4;ctx.strokeStyle='rgba(0,0,0,.6)';ctx.strokeText(t.t,t.x*CS,t.y*CS);ctx.fillStyle=t.col;ctx.fillText(t.t,t.x*CS,t.y*CS)}
+  ctx.globalAlpha=1;
+  ctx.restore();
+}
+
+// ---------- HUD ----------
+let hudT=0;
+function standings(){return lords().map(p=>{const c=scoreOf(p.team);return{p,c,pts:points(p.team,c),allies:players.filter(q=>q.team===p.team&&q!==p).length}}).sort((a,b)=>b.pts-a.pts)}
+function hud(dt){hudT-=dt;if(hudT>0)return;hudT=.25;
+  const rows=standings();
+  document.getElementById('lb').innerHTML='<b>🏆 מלכי הממלכה</b><br>'+rows.map((r,i)=>`<span style="color:${hsl(r.p,75)}">${i+1}. ${r.p.name}${r.allies?' +'+r.allies:''}</span> · ${r.pts}`).join('<br>');
+  const m=rows.find(r=>r.p.id===1);if(!m)return;
+  document.getElementById('me').innerHTML=`🗺️ ${(m.c/N*100).toFixed(1)}% מהממלכה<br>⭐ ${m.pts} נקודות<br>👑 הצטרפו אליך: ${m.allies}<br>${me().dashCd>0?'💨 דהירה נטענת':'💨 דהירה מוכנה (רווח)'}`;
+  const s=Math.max(0,Math.ceil(left));document.getElementById('timer').textContent=`⏳ ${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+}
+
+// ---------- flow ----------
+function toast(t){const e=document.getElementById('toast');e.textContent=t;e.style.opacity=1;setTimeout(()=>e.style.opacity=0,1800)}
+function copy(t){(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast('הועתק! הדבק בווטסאפ 📲'),()=>toast(t))}
+let endText='';
+function endGame(byKiller,world){if(!running)return;running=false;
+  const passed=!songMode&&!autoFilm&&!me().out&&(world||scoreOf(1)/N*100>=L().goal);const was=lvl;if(passed&&lvl<LEVELS.length-1){lvl++;try{localStorage.setItem('walls_lvl',lvl)}catch(e){}}setTimeout(()=>{const t=document.getElementById('endTitle');if(!t)return;if(passed)t.textContent=was===LEVELS.length-1?'👑 כבשת את העולם!':`✅ שלב ${was+1} הושלם! הבא: ${L().name}`;else if(!songMode&&!autoFilm)t.textContent=`❌ צריך ${L().goal}% כדי לעבור את ${L().name}`;showLevel()},0);
+  ['lb','me','timer'].forEach(i=>document.getElementById(i).classList.add('hidden'));
+  document.getElementById('dead').classList.add('hidden');
+  const rows=standings(),out=me().out,rank=out?rows.length+1:rows.findIndex(r=>r.p.id===1)+1,m=rows.find(r=>r.p.id===1),pct=m?(m.c/N*100).toFixed(1):'0';
+  document.getElementById('endTitle').textContent=world?'👑 כבשת את כל הממלכה!':out?'💀 הטירה שלך נכבשה':rank===1?'👑 אתה המלך!':rank<=3?'🥈 כמעט מלך!':'⚔️ הקרב נגמר';
+  document.getElementById('endTxt').innerHTML=out?`${byKiller?byKiller.name+' הקיף לך את הטירה':''}`:`כבשת ${pct}% מהממלכה · מקום ${rank}${m&&m.allies?`<br>${m.allies} ממלכות הצטרפו אליך`:''}`;
+  endText=`🏰 כבשתי ${pct}% מהממלכה במשחק "חומות"! חושב שתנצח אותי? ⚔️`;
+  document.getElementById('end').classList.remove('hidden');
+  showClips();setTimeout(showClips,2500);
+}
+function start(){try{ac=ac||new AudioContext();ac.resume()}catch(e){}
+  init();['start','end','dead'].forEach(i=>document.getElementById(i).classList.add('hidden'));
+  ['lb','me','timer'].forEach(i=>document.getElementById(i).classList.remove('hidden'));
+  for(const r of recs){try{r.mr.stop()}catch(e){}}recs=[];clips=[];lastHL=-9;
+  running=true;time=0;hudT=0;beep(523,.1,'triangle',.05);beep(784,.15,'triangle',.05,.1)}
+document.getElementById('go').onclick=()=>{autoFilm=false;start()};
+document.getElementById('insane').onclick=()=>{scene();toast('🎬 מצלם מהלך מטורף...')};
+document.getElementById('film').onclick=()=>{autoFilm=true;start();toast('🎬 מצב צילום: האביר משחק לבד, וכל רגע ויראלי נשמר')};
+document.getElementById('again').onclick=()=>start();
+document.getElementById('share').onclick=()=>copy(endText);
+document.getElementById('revenge').onclick=()=>copy(`😤 ${lastKiller} הפיל אותי במשחק "חומות"! בוא תעזור לי לנקום בו ⚔️`);
+
+init();showLevel();
+let last=0;
+let manualStep=false;
+function loop(t){requestAnimationFrame(loop);if(manualStep)return;followCam();try{sceneTick();let dt=Math.min(.05,(t-last)/1000||0);last=t;if(slow>0){slow-=dt;dt*=.35}if(running)update(dt);fx(dt);draw();drawRec();recTick();if(running)hud(dt)}catch(e){console.error(e)}}
+requestAnimationFrame(loop);
+</script>
+<script>
+// Match recorder: while you play, keeps a compact log of every frame (knight positions + map changes)
+// and every highlight the game detects, so the match can be re-rendered later in HD around its best moment.
+(() => {
+  if (location.search.includes('hq')) return;
+  const R = { on: false, frames: [], hl: [], prev: null, head: null };
+  const snap = () => {
+    if (!R.prev) R.prev = { o: new Int8Array(N), tr: new Int8Array(N), w: new Int8Array(N) };
+    const o = [], tr = [], w = [];
+    for (let c = 0; c < N; c++) {
+      if (owner[c] !== R.prev.o[c]) { o.push(c, owner[c]); R.prev.o[c] = owner[c] }
+      if (trail[c] !== R.prev.tr[c]) { tr.push(c, trail[c]); R.prev.tr[c] = trail[c] }
+      if (wall[c] !== R.prev.w[c]) { w.push(c, wall[c]); R.prev.w[c] = wall[c] }
+    }
+    R.frames.push({
+      t: +time.toFixed(3),
+      p: players.map(p => [+p.x.toFixed(2), +p.y.toFixed(2), p.alive ? 1 : 0, p.out ? 1 : 0, p.face, +p.bob.toFixed(2), p.team, p.hue, p.sat, p.dash > 0 ? 1 : 0, p.brk > 0 ? 1 : 0]),
+      o, tr, w, th: things.map(t => t.own),
+    });
+  };
+  const _start = start;
+  start = function () {
+    _start.apply(this, arguments);
+    R.on = !autoFilm; R.frames = []; R.hl = []; R.prev = null;
+    R.head = { names: players.map(p => p.name), homes: players.map(p => [p.hx, p.hy]), things: things.map(t => ({ x: t.x, y: t.y, kind: t.kind || '', homeOf: t.homeOf || 0, big: !!t.big })) };
+  };
+  const _update = update;
+  update = function (dt) { _update(dt); if (R.on && running) snap() };
+  const _hl = highlight;
+  highlight = function (k) { if (R.on) R.hl.push({ k, i: R.frames.length, t: +time.toFixed(2) }); return _hl(k) };
+  const _end = endGame;
+  endGame = function () {
+    const wasOn = R.on; R.on = false; _end.apply(this, arguments);
+    if (!wasOn || !R.frames.length) return;
+    const el = document.getElementById('clips');
+    if (!el) return;
+    const b = document.createElement('button');
+    b.style.cssText = 'display:block;margin:8px auto;font-size:17px;background:#2b6cb0;color:#fff;box-shadow:0 4px 0 #1a4a80';
+    b.textContent = `🎬 שמור את המשחק לעריכה (${R.hl.length} רגעים)`;
+    b.onclick = async () => {
+      const data = JSON.stringify({ v: 1, head: R.head, hl: R.hl, frames: R.frames });
+      const name = 'walls-match-' + Date.now() + '.json';
+      const dl = window.claude && window.claude.use ? await window.claude.use('downloads').catch(() => null) : null;
+      if (dl) { try { await dl.save({ filename: name, data }); b.textContent = '✅ נשמר' } catch (e) { b.textContent = '⚠️ לא נשמר' } }
+      else { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' })); a.download = name; document.body.appendChild(a); a.click(); a.remove(); b.textContent = '✅ נשמר' }
+    };
+    setTimeout(() => el.prepend(b), 2600);
+  };
+  window.__REC = R;
+})();
+</script>
+</body>
+</html>
