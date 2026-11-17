@@ -45,10 +45,8 @@ button.go{font:inherit;font-size:21px;font-weight:800;padding:12px 30px;border:n
   👑 הקף טירה, והממלכה מצטרפת אליך ונלחמת בשבילך.<br>
   ⚠️ נגעו לך בגדר? חוזרים לטירה.<br>
   💪 ככל שהממלכה שלך גדלה, אתה מהיר וחזק יותר.<br>
-  ⭐ הקף מבנים מיוחדים והם עובדים בשבילך:<br>⛏️ מכרה זהב · ⚔️ מחנה חיילים · 🐉 מערת דרקון · 🐴 אורוות<br>
-  🏠 כל 3 בתים = בוסט מהר יותר · 🎯 אפשר לגנוב מבנים מאויבים!<br>
-  🌍 המטרה: שהצבע שלך ישתלט על כל המפה.</p>
-  <p style="opacity:.7;font-size:14px">אצבע: גוררים לכיוון · מחשב: חיצים או עכבר · 💨 / רווח = בוסט</p>
+  🗼 הקף מגדל, והוא כובש לך בלוק כל 10 שניות.</p>
+  <p style="opacity:.7;font-size:14px">אצבע: גוררים לכיוון · מחשב: חיצים או עכבר · 💨 / רווח = דהירה</p>
   <button class="go" id="go">יאללה לכבוש ⚔️</button>
   <p><a href="./" style="color:#3b2a10">← למשחק הרגיל</a></p>
 </div></div>
@@ -62,26 +60,28 @@ addEventListener('resize',fit);fit();
 const idx=(x,y)=>y*W+x,cx=c=>c%W,cy=c=>(c/W)|0,R=(a,b)=>a+Math.random()*(b-a);
 const hsl=(p,l,a=1)=>`hsla(${p.hue},${p.sat}%,${l}%,${a})`;
 const A=['ממלכת','שבט','מסדר','בית','אימפריית','נסיכות'],B=['הדרקון','הזאב','הנשר','היער','הברק','הלהבה','הסערה','הירח','השמש','ההר','הים','הקרח','האלון','העוגן','הכתר','הנחש','הדוב','השועל'];
-let owner,trail,wall,capT,things=[],players=[],parts=[],texts=[],time=0,running=false,shake=0,counts=new Int32Array(128),cam={x:W/2,y:H/2};
+let water=new Uint8Array(1),owner,trail,wall,capT,things=[],players=[],parts=[],texts=[],time=0,running=false,shake=0,counts=new Int32Array(128),cam={x:W/2,y:H/2};
 const me=()=>players[0],foe=(a,b)=>a.team!==b.team;
 let ac;function beep(f,d=.08,type='square',v=.04,delay=0){try{ac=ac||new AudioContext();const t=ac.currentTime+delay,o=ac.createOscillator(),g=ac.createGain();o.type=type;o.frequency.setValueAtTime(f,t);g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.0001,t+d);o.connect(g).connect(ac.destination);o.start(t);o.stop(t+d)}catch(e){}}
 function toast(t){const e=document.getElementById('toast');e.textContent=t;e.style.opacity=1;clearTimeout(toast.h);toast.h=setTimeout(()=>e.style.opacity=0,1600)}
 
 // ---------- world ----------
-function freeArea(x,y,r){if(x<r+1||y<r+1||x>=W-r-1||y>=H-r-1)return false;for(let j=-r;j<=r;j++)for(let i=-r;i<=r;i++){const c=idx(x+i,y+j);if(owner[c]||trail[c])return false}return true}
+function freeArea(x,y,r){if(x<r+1||y<r+1||x>=W-r-1||y>=H-r-1)return false;for(let j=-r;j<=r;j++)for(let i=-r;i<=r;i++){const c=idx(x+i,y+j);if(owner[c]||trail[c]||water[c])return false}return true}
 function newKingdom(x,y){if(players.length>=126)return null;const id=players.length+1;
-  const p={id,team:id,name:A[(Math.random()*A.length)|0]+' '+B[(Math.random()*B.length)|0],hue:(id*47+R(0,30))%360,sat:R(55,80)|0,bot:true,x:x+.5,y:y+.5,dx:1,dy:0,tl:[],alive:true,respawn:0,dash:0,dashCd:0,brk:0,wp:[],bob:0,face:1,think:R(0,.4),hx:x,hy:y,skill:R(.85,1.3)};
+  const p={id,team:id,name:A[(Math.random()*A.length)|0]+' '+B[(Math.random()*B.length)|0],hue:(id*47+R(0,30))%360,sat:R(55,80)|0,bot:true,x:x+.5,y:y+.5,dx:1,dy:0,tl:[],alive:true,respawn:0,dash:0,dashCd:0,brk:0,wp:[],bob:0,face:1,think:R(0,.4),hx:x,hy:y,skill:R(.65,1.15)};
   players.push(p);claimHome(p,2);things.push({x,y,kind:'home',homeOf:id,own:id,pop:0});return p}
 function claimHome(p,r=1){for(let j=-r;j<=r;j++)for(let i=-r;i<=r;i++){const c=idx(p.hx+i,p.hy+j);owner[c]=p.team;wall[c]=Math.max(Math.abs(i),Math.abs(j))===r&&r>1?WALLHP:0}}
 function init(){
-  owner=new Int8Array(N);trail=new Int8Array(N);wall=new Int8Array(N);capT=new Float32Array(N).fill(-99);
-  players=[];things=[];parts=[];texts=[];time=0;flights=[];hitM={};stMul={};
+  owner=new Int8Array(N);trail=new Int8Array(N);water=new Uint8Array(N);
+  for(let k=0;k<26;k++){let lx=R(8,W-8),ly=R(8,H-8);if(Math.hypot(lx-W/2,ly-H/2)<12)continue;for(let b=0;b<5;b++){const rx=R(2,5.5),ry=R(2,5.5);lx+=R(-4,4);ly+=R(-4,4);for(let y=(ly-ry)|0;y<=ly+ry;y++)for(let x=(lx-rx)|0;x<=lx+rx;x++)if(x>1&&y>1&&x<W-2&&y<H-2&&((x-lx)/rx)**2+((y-ly)/ry)**2<1&&Math.hypot(x-W/2,y-H/2)>6)water[idx(x,y)]=1}}// lakes
+  wall=new Int8Array(N);capT=new Float32Array(N).fill(-99);
+  players=[];things=[];parts=[];texts=[];time=0;
   const m={id:1,team:1,name:'אני',hue:210,sat:80,bot:false,x:W/2+.5,y:H/2+.5,dx:1,dy:0,tl:[],alive:true,respawn:0,dash:0,dashCd:0,brk:0,wp:[],bob:0,face:1,hx:W/2,hy:H/2};
   players.push(m);claimHome(m,2);things.push({x:m.hx,y:m.hy,kind:'home',homeOf:1,own:1,pop:0});
-  for(let gy=12;gy<H-8;gy+=21)for(let gx=12;gx<W-8;gx+=21){const x=gx+((R(-5,5))|0),y=gy+((R(-5,5))|0);if(Math.hypot(x-m.hx,y-m.hy)<14)continue;if(freeArea(x,y,4))newKingdom(x,y)}
-  {const kinds=Object.keys(SP);let made=0;for(let k=0;k<8000&&made<52;k++){let x,y;if(made<4){const a=made*1.57+.6,d=R(9,15);x=(m.hx+Math.cos(a)*d)|0;y=(m.hy+Math.sin(a)*d)|0}else{x=4+((Math.random()*(W-8))|0);y=4+((Math.random()*(H-8))|0)}
-    if(owner[idx(x,y)]||!things.every(t=>Math.abs(t.x-x)+Math.abs(t.y-y)>6))continue;things.push({x,y,kind:kinds[made%4],own:0,pop:0,t:0,prev:0});made++}}
-  for(let k=0;k<4000&&things.length<players.length+310;k++){const x=4+((Math.random()*(W-8))|0),y=4+((Math.random()*(H-8))|0);if(owner[idx(x,y)])continue;if(things.every(t=>Math.abs(t.x-x)+Math.abs(t.y-y)>4))things.push({x,y,kind:'house',own:0,pop:0})}
+  for(let gy=12;gy<H-8;gy+=17)for(let gx=12;gx<W-8;gx+=17){const x=gx+((R(-5,5))|0),y=gy+((R(-5,5))|0);if(Math.hypot(x-m.hx,y-m.hy)<13)continue;if(freeArea(x,y,3))newKingdom(x,y)}
+  {let made=0;for(let k=0;k<8000&&made<45;k++){let x,y;if(made<3){const a=made*2.1+.4,d=R(9,14);x=(m.hx+Math.cos(a)*d)|0;y=(m.hy+Math.sin(a)*d)|0}else{x=4+((Math.random()*(W-8))|0);y=4+((Math.random()*(H-8))|0)}
+    if(owner[idx(x,y)]||water[idx(x,y)]||!things.every(t=>Math.abs(t.x-x)+Math.abs(t.y-y)>6))continue;things.push({x,y,kind:'tower',own:0,pop:0,t:0,r:1,prev:0});made++}}
+  for(let k=0;k<4000&&things.length<players.length+305;k++){const x=4+((Math.random()*(W-8))|0),y=4+((Math.random()*(H-8))|0);if(owner[idx(x,y)]||water[idx(x,y)])continue;if(things.every(t=>Math.abs(t.x-x)+Math.abs(t.y-y)>4))things.push({x,y,kind:'house',own:0,pop:0})}
   cam={x:m.x,y:m.y};
 }
 const near=(x,y,r=26)=>Math.abs(x-me().x)<r&&Math.abs(y-me().y)<r;
@@ -103,7 +103,7 @@ function humanDir(p){
   if(kb){const x=(keys.r|0)-(keys.l|0),y=(keys.d|0)-(keys.u|0);if(x||y){const l=Math.hypot(x,y);p.dx=x/l;p.dy=y/l}return}
   if(joy&&Math.hypot(joy.dx,joy.dy)>8){const l=Math.hypot(joy.dx,joy.dy);p.dx=joy.dx/l;p.dy=joy.dy/l;return}
   if(mouse){const x=mouse.clientX-innerWidth/2,y=mouse.clientY-innerHeight/2,l=Math.hypot(x,y);if(l>20){p.dx=x/l;p.dy=y/l}}}
-function dash(p){if(!p||!p.alive||p.dashCd>0||!running)return;p.dash=1.4;p.dashCd=boostCd();if(!p.bot)beep(300,.15,'sawtooth',.03)}
+function dash(p){if(!p||!p.alive||p.dashCd>0||!running)return;p.dash=.35;p.dashCd=p.bot?3:Math.max(1.2,3-myLevel()*.18);if(!p.bot)beep(300,.15,'sawtooth',.03)}
 
 // ---------- bots (only the ones near you play; far kingdoms wait) ----------
 function nearestOwn(p){let best=null,bd=1e9;const x0=Math.max(0,(p.x-25)|0),x1=Math.min(W,(p.x+25)|0),y0=Math.max(0,(p.y-25)|0),y1=Math.min(H,(p.y+25)|0);
@@ -114,8 +114,8 @@ function planLoop(p){const h=nearestOwn(p),home={x:cx(h)+.5,y:cy(h)+.5};
   if(p.team===1){// my allies push into the closest enemy kingdom
     const t=things.filter(t=>t.kind==='home'&&players[t.homeOf-1].team!==1&&Math.abs(t.x-p.x)+Math.abs(t.y-p.y)<40).sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y))[0];
     if(t&&Math.random()<.5){loopAround(p,t.x+.5,t.y+.5,3.5,home);return}}
-  const tg=things.filter(t=>t.kind!=='home'&&t.own!==p.team&&Math.abs(t.x-p.x)+Math.abs(t.y-p.y)<(SP[t.kind]?32:16)).sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)/(SP[a.kind]?3:1)-Math.hypot(b.x-p.x,b.y-p.y)/(SP[b.kind]?3:1))[0];
-  if(tg&&Math.random()<(SP[tg.kind]?.85:.5)){loopAround(p,tg.x+.5,tg.y+.5,2,home);return}
+  const tg=things.filter(t=>t.kind!=='home'&&t.own!==p.team&&Math.abs(t.x-p.x)+Math.abs(t.y-p.y)<(t.kind==='tower'?26:16)).sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y))[0];
+  if(tg&&Math.random()<.5){loopAround(p,tg.x+.5,tg.y+.5,2,home);return}
   const d=[[1,0],[-1,0],[0,1],[0,-1]][(Math.random()*4)|0],s=Math.random()<.5?1:-1,q=[-d[1]*s,d[0]*s],L=R(4,10)*p.skill,Wd=R(3,7)*p.skill;
   p.wp=[cl(p.x+d[0]*L,p.y+d[1]*L),cl(p.x+d[0]*L+q[0]*Wd,p.y+d[1]*L+q[1]*Wd),cl(p.x+q[0]*Wd,p.y+q[1]*Wd),home]}
 // smart bots: race math instead of random lunges
@@ -123,12 +123,11 @@ function homeDist(p){if(!p.tl.length)return 0;const h=nearestOwn(p);return Math.
 function botThink(p,dt){p.think-=dt;
   if(p.think<=0){p.think=.25;
     const myHome=homeDist(p);let danger=1e9,best=null,bestGain=0;
-    for(const o of players){if(!foe(o,p)||!o.alive||Math.abs(o.x-p.x)>24||Math.abs(o.y-p.y)>24)continue;
+    for(const o of players){if(!foe(o,p)||!o.alive||Math.abs(o.x-p.x)>18||Math.abs(o.y-p.y)>18)continue;
       for(const c of p.tl){const d=Math.hypot(cx(c)+.5-o.x,cy(c)+.5-o.y);if(d<danger)danger=d}
       if(o.tl.length){const his=homeDist(o);for(let i=0;i<o.tl.length;i+=2){const c=o.tl[i],x=cx(c)+.5,y=cy(c)+.5,d=Math.hypot(x-p.x,y-p.y),margin=his-d*1.05;
-        if(margin>.8&&d<20){const gain=o.tl.length+margin*2-d;if(gain>bestGain){bestGain=gain;best={x,y}}}}}}
-    const h=nearestOwn(p),home={x:cx(h)+.5,y:cy(h)+.5},M=me();
-    if(!best&&!p.tl.length&&p.team!==1&&M.alive&&M.tl.length&&Math.hypot(M.x-p.x,M.y-p.y)<22){const c=M.tl[M.tl.length>>1];best={x:cx(c)+.5,y:cy(c)+.5}}// stalk: move toward your fence, cut if you stay out too long
+        if(margin>1.5&&d<14){const gain=o.tl.length+margin*2-d;if(gain>bestGain){bestGain=gain;best={x,y}}}}}}
+    const h=nearestOwn(p),home={x:cx(h)+.5,y:cy(h)+.5};
     if(p.tl.length&&danger<myHome+2)p.wp=[home];
     else if(best&&(!p.tl.length||danger>myHome+6))p.wp=[best];
     else if(p.tl.length>(14+Math.min(danger,30))*p.skill)p.wp=[home]}
@@ -147,7 +146,7 @@ function capture(p){let gained=0,x0=W,y0=H,x1=0,y1=0;const blk=new Uint8Array(N)
   const seen=new Uint8Array(N),st=[],push=c=>{if(!seen[c]&&owner[c]!==p.team&&!blk[c]){seen[c]=1;st.push(c)}};
   for(let x=x0;x<=x1;x++){push(idx(x,y0));push(idx(x,y1))}for(let y=y0;y<=y1;y++){push(idx(x0,y));push(idx(x1,y))}
   while(st.length){const c=st.pop(),x=cx(c),y=cy(c);if(x>x0)push(c-1);if(x<x1)push(c+1);if(y>y0)push(c-W);if(y<y1)push(c+W)}
-  for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const c=idx(x,y);if(seen[c]||owner[c]===p.team||blk[c])continue;if(trail[c]&&foe(players[trail[c]-1],p))kill(players[trail[c]-1],p);owner[c]=p.team;wall[c]=0;gained++;if(p.id===1)capT[c]=time+Math.hypot(x-p.x,y-p.y)*.03}
+  for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const c=idx(x,y);if(seen[c]||owner[c]===p.team||blk[c]||water[c])continue;if(trail[c]&&foe(players[trail[c]-1],p))kill(players[trail[c]-1],p);owner[c]=p.team;wall[c]=0;gained++;if(p.id===1)capT[c]=time+Math.hypot(x-p.x,y-p.y)*.03}
   for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const c=idx(x,y);if(!wall[c])continue;const o=owner[c];if(x>0&&x<W-1&&y>0&&y<H-1&&owner[c-1]===o&&owner[c+1]===o&&owner[c-W]===o&&owner[c+W]===o)wall[c]=0}
   if(near(p.x,p.y)){texts.push({x:p.x,y:p.y-1,t:'+'+gained,life:1.2,col:hsl(p,40),big:gained>40});for(let i=0;i<20;i++)parts.push({x:p.x,y:p.y,vx:R(-7,7),vy:R(-9,-2),life:1,max:1,col:`hsl(${R(0,360)},90%,60%)`,s:R(2,4),g:14})}
   if(p.id===1){shake=Math.min(8,2+gained/20);[523,659,784,1046].forEach((f,i)=>beep(f,.12,'triangle',.05,i*.06))}}
@@ -160,54 +159,40 @@ function join(v,lord){const old=v.team;if(old===lord.team)return;if(v.id===1)ret
   for(let c=0;c<N;c++)if(owner[c]===old){owner[c]=lord.team;if(lord.id===1)capT[c]=time+Math.hypot(cx(c)-v.hx,cy(c)-v.hy)*.03}
   claimHome(v);if(lord.id===1){shake=12;toast('👑 '+v.name+' הצטרפה אליך!');[523,659,784,1046,1318].forEach((f,i)=>beep(f,.15,'triangle',.06,i*.07))}}
 
-// ---------- special buildings ----------
-const SP={mine:{e:'⛏️',n:'מכרה זהב',d:'החומות שלך מתחזקות בזהב',cd:8},barracks:{e:'⚔️',n:'מחנה חיילים',d:'מייצר לך חיילים',cd:12},dragon:{e:'🐉',n:'מערת דרקון',d:'הדרקון שורף אויבים בשבילך',cd:16},stable:{e:'🐴',n:'אורוות',d:'כל הממלכה שלך מהירה יותר',cd:0}};
-function boostCd(){return Math.max(5,15-Math.floor(things.filter(t=>t.kind==='house'&&t.own===1).length/3))}
-let stMul={},flights=[],hitM={};
-function makeSoldier(t){if(players.length>=126)return;const L=players[t.own-1],id=players.length+1;
-  players.push({id,team:t.own,name:'חייל של '+L.name,hue:L.hue,sat:L.sat,bot:true,x:t.x+.5,y:t.y+1.5,dx:0,dy:1,tl:[],alive:true,respawn:0,dash:0,dashCd:0,brk:0,wp:[],bob:0,face:1,think:0,hx:t.x,hy:t.y,skill:1.15,soldier:t})}
-function specialTaken(t){const S=SP[t.kind];t.t=S.cd;
-  for(const q of players)if(q.soldier===t){if(t.own){const L=players[t.own-1];q.team=t.own;q.hue=L.hue;q.sat=L.sat}else{q.alive=false;for(const c of q.tl)trail[c]=0;q.tl=[];q.respawn=1e9}}
-  if(t.own===1){toast(S.e+' כבשת '+S.n+'! '+S.d);shake=10;[523,659,784,1046,1318].forEach((f,i)=>beep(f,.15,'triangle',.06,i*.07))}
-  else if(t.prev===1)toast('😱 איבדת את ה'+S.n);t.prev=t.own}
-function specialTick(t,dt){if(!SP[t.kind].cd||!near(t.x,t.y,70))return;t.t-=dt;if(t.t>0)return;t.t=SP[t.kind].cd;
-  if(t.kind==='mine'){for(let y=Math.max(0,t.y-10);y<Math.min(H,t.y+11);y++)for(let x=Math.max(0,t.x-10);x<Math.min(W,t.x+11);x++){const c=idx(x,y);if(owner[c]===t.own&&wall[c])wall[c]=Math.min(9,wall[c]+2)}
-    if(near(t.x,t.y))for(let i=0;i<14;i++)parts.push({x:t.x+.5,y:t.y+.5,vx:R(-5,5),vy:R(-8,-2),life:.9,max:.9,col:'#ffd23f',s:R(2,4),g:12})}
-  else if(t.kind==='barracks'){if(players.filter(q=>q.soldier===t&&q.respawn<1e8).length<2){makeSoldier(t);if(t.own===1&&near(t.x,t.y))toast('⚔️ חייל חדש הצטרף אליך')}}
-  else if(t.kind==='dragon'){let best=-1,bd=1e9;const r=22;for(let y=Math.max(0,t.y-r);y<Math.min(H,t.y+r);y++)for(let x=Math.max(0,t.x-r);x<Math.min(W,t.x+r);x++){const o=owner[idx(x,y)];if(o&&o!==t.own){const d=(x-t.x)**2+(y-t.y)**2;if(d<bd){bd=d;best=idx(x,y)}}}
-    if(best>=0)flights.push({sx:t.x,sy:t.y,tx:cx(best),ty:cy(best),own:t.own,t:0})}}
-function burn(f){if(!f.own)return;const home=new Set();for(const p of players)for(let j=-1;j<=1;j++)for(let i=-1;i<=1;i++)home.add(idx(p.hx+i,p.hy+j));
-  for(let j=-3;j<=3;j++)for(let i=-3;i<=3;i++){if(i*i+j*j>10)continue;const x=f.tx+i,y=f.ty+j;if(x<0||y<0||x>=W||y>=H)continue;const c=idx(x,y);if(home.has(c)||owner[c]===f.own)continue;
-    if(trail[c]&&players[trail[c]-1].team!==f.own)kill(players[trail[c]-1],null);owner[c]=f.own;wall[c]=0;if(f.own===1)capT[c]=time}
-  if(near(f.tx,f.ty)){for(let i=0;i<30;i++)parts.push({x:f.tx+.5,y:f.ty+.5,vx:R(-8,8),vy:R(-9,2),life:.8,max:.8,col:i%2?'#ff7b00':'#ffd000',s:R(3,6),g:6});shake=Math.max(shake,6);beep(90,.35,'sawtooth',.05)}
-  if(f.own===1)toast('🐉 הדרקון שלך שרף אויבים!')}
+// ---------- towers: capture one, and it paints blocks around it for you ----------
+function towerTaken(t){t.t=10;if(t.own===1){toast('🗼 כבשת מגדל! הוא כובש לך בלוק כל 10 שניות');shake=10;[523,659,784,1046].forEach((f,i)=>beep(f,.14,'triangle',.06,i*.07))}else if(t.prev===1)toast('😱 לקחו לך מגדל');t.prev=t.own}
+function towerTick(t,dt){if(!near(t.x,t.y,60))return;t.t-=dt;if(t.t>0)return;t.t=10;// one block every 10 seconds
+  const homes=new Set();for(const p of players)for(let j=-1;j<=1;j++)for(let i=-1;i<=1;i++)homes.add(idx(p.hx+i,p.hy+j));let best=-1,bd=1e9;
+  for(let j=-6;j<=6;j++)for(let i=-6;i<=6;i++){const x=t.x+i,y=t.y+j;if(x<0||y<0||x>=W||y>=H)continue;const c=idx(x,y);if(owner[c]===t.own||homes.has(c)||water[c])continue;const d=i*i+j*j+Math.random()*.5;if(d<bd){bd=d;best=c}}
+  if(best<0)return;if(trail[best]&&players[trail[best]-1].team!==t.own)kill(players[trail[best]-1],null);owner[best]=t.own;wall[best]=0;if(t.own===1)capT[best]=time;
+  if(near(t.x,t.y)){t.pop=.6;if(t.own===1)beep(660,.08,'triangle',.04)}}
 
 // ---------- endless: new kingdoms keep rising around you ----------
 let spawnT=0;
 function spawnAround(){const m=me();let foes=0;for(const t of things)if(t.kind==='home'&&players[t.homeOf-1].team!==1&&Math.abs(t.x-m.x)<45&&Math.abs(t.y-m.y)<45)foes++;
-  if(foes>=7)return;for(let k=0;k<60;k++){const a=R(0,7),d=R(26,42),x=(m.x+Math.cos(a)*d)|0,y=(m.y+Math.sin(a)*d)|0;if(freeArea(x,y,3)){const p=newKingdom(x,y);if(p){toast('⚔️ ממלכה חדשה קמה: '+p.name)}return}}}
+  if(foes>=6)return;for(let k=0;k<60;k++){const a=R(0,7),d=R(26,42),x=(m.x+Math.cos(a)*d)|0,y=(m.y+Math.sin(a)*d)|0;if(freeArea(x,y,3)){const p=newKingdom(x,y);if(p){toast('⚔️ ממלכה חדשה קמה: '+p.name)}return}}}
 
 // ---------- update ----------
 let cntT=0;
 function update(dt){time+=dt;
-  cntT-=dt;if(cntT<=0){cntT=.5;counts.fill(0);for(let c=0;c<N;c++)if(owner[c])counts[owner[c]]++;stMul={};for(const t of things)if(t.kind==='stable'&&t.own)stMul[t.own]=Math.min(1.45,(stMul[t.own]||1)+.15);{const pct=counts[1]/N;for(const [g,msg] of [[.05,'🌱 5% מהעולם שלך!'],[.15,'🔥 15% מהעולם צבוע בצבע שלך!'],[.3,'⚡ שליש עולם! כולם מפחדים ממך'],[.5,'👑 חצי עולם שלך!'],[.8,'🌍 העולם כמעט כולו שלך!']])if(pct>=g&&!hitM[g]){hitM[g]=1;setTimeout(()=>toast(msg),900)}}const L=myLevel();if(L>lastLvl){lastLvl=L;toast('💪 רמה '+L+': אתה מהיר וחזק יותר!');beep(880,.2,'triangle',.06)}}
-  spawnT-=dt;if(spawnT<=0){spawnT=4;spawnAround()}
+  cntT-=dt;if(cntT<=0){cntT=.5;counts.fill(0);for(let c=0;c<N;c++)if(owner[c])counts[owner[c]]++;const L=myLevel();if(L>lastLvl){lastLvl=L;toast('💪 רמה '+L+': אתה מהיר וחזק יותר!');beep(880,.2,'triangle',.06)}}
+  spawnT-=dt;if(spawnT<=0){spawnT=6;spawnAround()}
   const m=me();
   for(const p of players){
     if(p.bot&&!near(p.x,p.y,45))continue;
     if(!p.alive){p.respawn-=dt;if(p.respawn<=0){claimHome(p);p.x=p.hx+.5;p.y=p.hy+.5;p.alive=true;p.tl=[];p.wp=[]}continue}
     if(p.bot)botThink(p,dt);else humanDir(p);
     p.dashCd-=dt;p.dash-=dt;if(Math.abs(p.dx)>.2)p.face=p.dx>0?1:-1;
-    const sp=SPEED*(p.dash>0?1.9:1)*(stMul[p.team]||1)*(p.id===1?1+Math.min(.5,(myLevel()-1)*.06):1);
-    const nx=Math.max(.5,Math.min(W-.5,p.x+p.dx*sp*dt)),ny=Math.max(.5,Math.min(H-.5,p.y+p.dy*sp*dt));
+    const sp=SPEED*(p.dash>0?2.2:1)*(p.id===1?1+Math.min(.5,(myLevel()-1)*.06):1);
+    let nx=Math.max(.5,Math.min(W-.5,p.x+p.dx*sp*dt)),ny=Math.max(.5,Math.min(H-.5,p.y+p.dy*sp*dt));
+    if(water[idx(nx|0,ny|0)]){if(!water[idx(nx|0,p.y|0)])ny=p.y;else if(!water[idx(p.x|0,ny|0)])nx=p.x;else{if(p.bot)p.wp=[];continue}if(p.bot&&Math.random()<.04)p.wp=[]}
     const cc=idx(p.x|0,p.y|0),nc=idx(nx|0,ny|0);
     if(nc!==cc&&wall[nc]>0&&owner[nc]!==p.team){p.brk+=dt;p.bob+=dt*40;const need=p.id===1?Math.max(.15,.42-myLevel()*.03):.42;
       if(p.brk>need){p.brk=0;wall[nc]--;if(near(p.x,p.y))for(let i=0;i<5;i++)parts.push({x:cx(nc)+.5,y:cy(nc)+.5,vx:R(-4,4),vy:R(-6,-1),life:.5,max:.5,col:'#9aa0a8',s:R(2,4),g:18});if(p.id===1){shake=Math.max(shake,3);beep(180,.06,'square',.05)}}continue}
     p.brk=0;p.x=nx;p.y=ny;p.bob+=dt*sp*2.6;if(nc!==cc)enterCell(p,nc)}
   for(const t of things){const o=owner[idx(t.x,t.y)];
     if(t.kind==='home'){const v=players[t.homeOf-1];if(o&&o!==v.team&&v.id!==1)join(v,players[o-1]);t.own=v.team;continue}
-    if(o!==t.own){t.own=o;t.pop=1;if(SP[t.kind])specialTaken(t);else if(o===1&&near(t.x,t.y))beep(784,.1,'triangle',.04)}if(SP[t.kind]&&t.own)specialTick(t,dt)}
-  for(const f of flights){f.t+=dt;if(f.t>=1&&!f.done){f.done=1;burn(f)}}flights=flights.filter(f=>!f.done)}
+    if(o!==t.own){t.own=o;t.pop=1;if(t.kind==='tower')towerTaken(t);else if(o===1&&near(t.x,t.y))beep(784,.1,'triangle',.04)}if(t.kind==='tower'&&t.own)towerTick(t,dt)}}
 function fx(dt){shake=Math.max(0,shake-dt*30);for(const q of parts){q.life-=dt;q.x+=q.vx*dt;q.y+=q.vy*dt;q.vy+=q.g*dt}parts=parts.filter(q=>q.life>0);
   for(const t of texts){t.life-=dt;t.y-=dt*1.4}texts=texts.filter(t=>t.life>0);for(const t of things)t.pop=Math.max(0,t.pop-dt*2.5)}
 
@@ -218,24 +203,24 @@ function draw(){const m=me(),tx=m.alive?m.x:m.hx+.5,ty=m.alive?m.y:m.hy+.5;cam.x
   ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#2f5f28';ctx.fillRect(0,0,VW,VH);
   ctx.setTransform(k,0,0,k,VW/2-cam.x*S+(shake?R(-shake,shake):0),VH/2-cam.y*S+(shake?R(-shake,shake):0));
   const x0=Math.max(0,Math.floor(cam.x-hw)-1),x1=Math.min(W,Math.ceil(cam.x+hw)+1),y0=Math.max(0,Math.floor(cam.y-hh)-1),y1=Math.min(H,Math.ceil(cam.y+hh)+2),CS=16;
-  for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){const c=idx(x,y),o=owner[c];ctx.fillStyle=o?hsl(players[o-1],70,.95):(x+y)%2?'#86c95f':'#7fc258';ctx.fillRect(x*CS,y*CS,CS+.5,CS+.5);
+  for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){const c=idx(x,y),o=owner[c];if(water[c]){ctx.fillStyle='#4aa3df';ctx.fillRect(x*CS,y*CS,CS+.5,CS+.5);if((x*7+y*3)%9===0){ctx.strokeStyle='rgba(255,255,255,.45)';ctx.lineWidth=1.5;ctx.beginPath();const w=Math.sin(time*2+x)*2;ctx.moveTo(x*CS+3,y*CS+8+w);ctx.quadraticCurveTo(x*CS+8,y*CS+5+w,x*CS+13,y*CS+8+w);ctx.stroke()}continue}
+    ctx.fillStyle=o?hsl(players[o-1],70,.95):(x+y)%2?'#86c95f':'#7fc258';ctx.fillRect(x*CS,y*CS,CS+.5,CS+.5);
     const f=time-capT[c];if(f>-2&&f<.6){ctx.fillStyle=f<0?'rgba(126,196,90,.9)':`rgba(255,255,220,${(1-f/.6)*.75})`;ctx.fillRect(x*CS,y*CS,CS,CS)}}
   ctx.lineWidth=2;for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){const c=idx(x,y),o=owner[c];if(!o)continue;const X=x*CS,Y=y*CS;ctx.strokeStyle=hsl(players[o-1],40,.9);ctx.beginPath();
     if(y>0&&owner[c-W]!==o){ctx.moveTo(X,Y);ctx.lineTo(X+CS,Y)}if(y<H-1&&owner[c+W]!==o){ctx.moveTo(X,Y+CS);ctx.lineTo(X+CS,Y+CS)}if(x>0&&owner[c-1]!==o){ctx.moveTo(X,Y);ctx.lineTo(X,Y+CS)}if(x<W-1&&owner[c+1]!==o){ctx.moveTo(X+CS,Y);ctx.lineTo(X+CS,Y+CS)}ctx.stroke()}
-  for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){const c=idx(x,y);if(!wall[c]||!owner[c])continue;const p=players[owner[c]-1],X=x*CS,Y=y*CS;ctx.fillStyle='rgba(0,0,0,.25)';rr(X+1,Y+3,CS-2,CS-2,4);ctx.fill();const gold=wall[c]>WALLHP;ctx.fillStyle=gold?'#c9a227':'#8f949c';rr(X+1,Y+1,CS-2,CS-3,4);ctx.fill();ctx.fillStyle=gold?'#f5d76e':'#b6bbc3';rr(X+2,Y+2,CS-4,6,3);ctx.fill();ctx.fillStyle=hsl(p,50);ctx.fillRect(X+3,Y+CS-6,CS-6,3)}
+  for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){const c=idx(x,y);if(!wall[c]||!owner[c])continue;const p=players[owner[c]-1],X=x*CS,Y=y*CS;ctx.fillStyle='rgba(0,0,0,.25)';rr(X+1,Y+3,CS-2,CS-2,4);ctx.fill();ctx.fillStyle='#8f949c';rr(X+1,Y+1,CS-2,CS-3,4);ctx.fill();ctx.fillStyle='#b6bbc3';rr(X+2,Y+2,CS-4,6,3);ctx.fill();ctx.fillStyle=hsl(p,50);ctx.fillRect(X+3,Y+CS-6,CS-6,3)}
   const inV=(x,y)=>x>x0-3&&x<x1+3&&y>y0-3&&y<y1+3;
   for(const p of players)p.tl.forEach((c,i)=>{const x=cx(c),y=cy(c);if(!inV(x,y))return;const X=x*CS+8,Y=y*CS+8,w=Math.sin(time*12+i);ctx.fillStyle=hsl(p,60,.35);ctx.fillRect(x*CS,y*CS,CS,CS);ctx.fillStyle='#8a5a2b';rr(X-2+w*.3,Y-6,4,12,1.5);ctx.fill();ctx.fillStyle=hsl(p,55);ctx.beginPath();ctx.moveTo(X-3,Y-6);ctx.lineTo(X,Y-10);ctx.lineTo(X+3,Y-6);ctx.fill()});
-  for(const t of things){if(!inV(t.x,t.y))continue;const X=t.x*CS+8,Y=t.y*CS+8,home=t.kind==='home',s=(home?1.5:SP[t.kind]?1.35:1)*(1+t.pop*.5),p=t.own?players[t.own-1]:null;ctx.save();ctx.translate(X,Y);ctx.scale(s,s);ctx.fillStyle='rgba(0,0,0,.2)';ctx.beginPath();ctx.ellipse(0,9,10,3,0,0,7);ctx.fill();
-    if(SP[t.kind]){ctx.fillStyle='#6d6a64';rr(-10,-8,20,17,4);ctx.fill();ctx.fillStyle=p?hsl(p,50):'#9a958c';rr(-10,-8,20,5,3);ctx.fill();ctx.font='13px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(SP[t.kind].e,0,2);ctx.textBaseline='alphabetic';
-      if(!t.own){ctx.strokeStyle=`rgba(255,224,102,${.5+.5*Math.sin(time*5)})`;ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,14,0,7);ctx.stroke()}
-      else if(SP[t.kind].cd){ctx.strokeStyle='#ffe066';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,14,-Math.PI/2,-Math.PI/2+Math.PI*2*(1-Math.max(0,t.t)/SP[t.kind].cd));ctx.stroke()}}
+  for(const t of things){if(!inV(t.x,t.y))continue;const X=t.x*CS+8,Y=t.y*CS+8,home=t.kind==='home',s=(home?1.5:t.kind==='tower'?1.3:1)*(1+t.pop*.5),p=t.own?players[t.own-1]:null;ctx.save();ctx.translate(X,Y);ctx.scale(s,s);ctx.fillStyle='rgba(0,0,0,.2)';ctx.beginPath();ctx.ellipse(0,9,10,3,0,0,7);ctx.fill();
+    if(t.kind==='tower'){ctx.fillStyle='#9a958c';ctx.fillRect(-5,-14,10,23);ctx.fillStyle='#b8b3a8';ctx.fillRect(-7,-17,14,5);ctx.fillRect(-7,-20,3,3);ctx.fillRect(-1.5,-20,3,3);ctx.fillRect(4,-20,3,3);ctx.fillStyle='#5b4632';rr(-2,2,4,7,2);ctx.fill();
+      ctx.fillStyle=p?hsl(p,50):'#ddd';ctx.fillRect(-1,-30,2,11);ctx.beginPath();ctx.moveTo(1,-30);ctx.lineTo(9,-27);ctx.lineTo(1,-24);ctx.fill();
+      if(!t.own){ctx.strokeStyle=`rgba(255,224,102,${.5+.5*Math.sin(time*5)})`;ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,-4,16,0,7);ctx.stroke()}}
     else if(home){ctx.fillStyle='#efe4c8';ctx.fillRect(-9,-4,18,13);ctx.fillRect(-11,-9,6,18);ctx.fillRect(5,-9,6,18);ctx.fillStyle=p?hsl(p,45):'#777';ctx.beginPath();ctx.moveTo(-12,-9);ctx.lineTo(-8,-15);ctx.lineTo(-4,-9);ctx.moveTo(4,-9);ctx.lineTo(8,-15);ctx.lineTo(12,-9);ctx.moveTo(-3,-9);ctx.lineTo(0,-18);ctx.lineTo(3,-9);ctx.fill();ctx.fillStyle='#5b4632';rr(-3,2,6,7,3);ctx.fill()}
     else{ctx.fillStyle='#f3e6c8';ctx.fillRect(-6,-2,12,10);ctx.fillStyle=p?hsl(p,48):'#a0522d';ctx.beginPath();ctx.moveTo(-8,-1);ctx.lineTo(0,-9);ctx.lineTo(8,-1);ctx.fill();ctx.fillStyle='#6b4a2b';ctx.fillRect(-2,3,4,5)}ctx.restore()}
   for(const p of players){if(!p.alive||!inV(p.x,p.y))continue;const X=p.x*CS,Y=p.y*CS,b=Math.sin(p.bob),hop=Math.abs(b)*3;ctx.fillStyle='rgba(0,0,0,.25)';ctx.beginPath();ctx.ellipse(X,Y+8,8,3,0,0,7);ctx.fill();ctx.save();ctx.translate(X,Y-hop);ctx.scale(p.face,1);
     ctx.fillStyle='#555';ctx.fillRect(-4,5+b*2,3,5);ctx.fillRect(1,5-b*2,3,5);ctx.fillStyle=hsl(p,52);ctx.beginPath();ctx.arc(0,1,8,0,7);ctx.fill();ctx.fillStyle='#c8ccd3';ctx.beginPath();ctx.arc(0,-6,7,Math.PI,0);ctx.lineTo(7,-3);ctx.lineTo(-7,-3);ctx.fill();ctx.fillStyle='#2b2d33';ctx.fillRect(1,-6,6,2);ctx.fillStyle=hsl(p,55);ctx.beginPath();ctx.ellipse(-3,-14,5,2.5,-.5,0,7);ctx.fill();
     ctx.save();ctx.translate(7,1);ctx.rotate(p.brk>0?-1.4+((time*6)%1)*2:.3+b*.3);ctx.fillStyle='#e5e8ee';ctx.fillRect(0,-12,2.5,12);ctx.restore();ctx.restore();
     if(p.id===1){ctx.strokeStyle='rgba(255,255,255,.85)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(X,Y,13+Math.sin(time*5)*1.5,0,7);ctx.stroke()}}
-  for(const f of flights){const k=Math.min(1,f.t),x=(f.sx+(f.tx-f.sx)*k)*CS+8,y=(f.sy+(f.ty-f.sy)*k)*CS+8-Math.sin(k*Math.PI)*50;ctx.font='26px system-ui';ctx.textAlign='center';ctx.fillText('🐉',x,y)}
   for(const q of parts){if(!inV(q.x,q.y))continue;ctx.globalAlpha=Math.max(0,q.life/q.max);ctx.fillStyle=q.col;ctx.fillRect(q.x*CS,q.y*CS,q.s,q.s)}ctx.globalAlpha=1;
   for(const t of texts){if(!inV(t.x,t.y))continue;ctx.globalAlpha=Math.min(1,t.life*2);ctx.font=`900 ${t.big?24:17}px system-ui`;ctx.textAlign='center';ctx.lineWidth=4;ctx.strokeStyle='rgba(0,0,0,.6)';ctx.strokeText(t.t,t.x*CS,t.y*CS);ctx.fillStyle=t.col;ctx.fillText(t.t,t.x*CS,t.y*CS)}ctx.globalAlpha=1}
 
@@ -243,8 +228,8 @@ function draw(){const m=me(),tx=m.alive?m.x:m.hx+.5,ty=m.alive?m.y:m.hy+.5;cam.x
 const mm=document.getElementById('mm'),mx=mm.getContext('2d'),mimg=mx.createImageData(W,H);let hudT=0,mmT=0;
 function hslRgb(h,s,l){s/=100;l/=100;const k=n=>(n+h/30)%12,a=s*Math.min(l,1-l),f=n=>l-a*Math.max(-1,Math.min(k(n)-3,9-k(n),1));return[f(0)*255|0,f(8)*255|0,f(4)*255|0]}
 function hud(dt){hudT-=dt;if(hudT<=0){hudT=.3;const m=me(),mine=players.filter(p=>p.team===1&&p.id!==1).length,foes=players.filter(p=>p.team===p.id&&p.id!==1).length;
-  document.getElementById('me').innerHTML=`💪 רמה ${myLevel()}<br>🗺️ ${(counts[1]/N*100).toFixed(1)}% מהעולם<br>👑 ממלכות שלך: ${mine}<br>⚔️ ממלכות אויב: ${foes}<br>${Object.keys(SP).map(k=>SP[k].e+things.filter(t=>t.kind===k&&t.own===1).length).join(' ')}<br>🏠 ${things.filter(t=>t.kind==='house'&&t.own===1).length} בתים = בוסט כל ${boostCd()} שנ׳<br>💨 ${m.dashCd>0?'בוסט בעוד '+Math.ceil(m.dashCd):'בוסט מוכן! (רווח)'}`;const db=document.getElementById('dash');db.textContent=m.dashCd>0?Math.ceil(m.dashCd):'💨';db.style.opacity=m.dashCd>0?.55:1}
-  mmT-=dt;if(mmT<=0){mmT=1;const rgb=players.map(p=>hslRgb(p.hue,p.sat,50)),d=mimg.data;for(let c=0;c<N;c++){const o=owner[c],i=c*4,col=o?rgb[o-1]:[110,170,80];d[i]=col[0];d[i+1]=col[1];d[i+2]=col[2];d[i+3]=255}mx.putImageData(mimg,0,0);for(const t of things)if(SP[t.kind]){mx.fillStyle=t.own===1?'#fff':'#ffd23f';mx.fillRect(t.x-1,t.y-1,3,3)}const m=me();mx.fillStyle='#fff';mx.fillRect(m.x-2,m.y-2,5,5)}}
+  document.getElementById('me').innerHTML=`💪 רמה ${myLevel()}<br>🗺️ ${(counts[1]/N*100).toFixed(1)}% מהעולם<br>👑 ממלכות שלך: ${mine}<br>⚔️ ממלכות אויב: ${foes}`}
+  mmT-=dt;if(mmT<=0){mmT=1;const rgb=players.map(p=>hslRgb(p.hue,p.sat,50)),d=mimg.data;for(let c=0;c<N;c++){const o=owner[c],i=c*4,col=water[c]?[74,163,223]:o?rgb[o-1]:[110,170,80];d[i]=col[0];d[i+1]=col[1];d[i+2]=col[2];d[i+3]=255}mx.putImageData(mimg,0,0);for(const t of things)if(t.kind==='tower'){mx.fillStyle=t.own===1?'#fff':'#ffd23f';mx.fillRect(t.x-1,t.y-1,3,3)}const m=me();mx.fillStyle='#fff';mx.fillRect(m.x-2,m.y-2,5,5)}}
 
 function go(){try{ac=ac||new AudioContext();ac.resume()}catch(e){}init();document.getElementById('start').classList.add('hidden');['me','mm','dash'].forEach(i=>document.getElementById(i).classList.remove('hidden'));running=true;lastLvl=1;spawnT=0}
 document.getElementById('go').onclick=go;
